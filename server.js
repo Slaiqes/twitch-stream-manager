@@ -3,21 +3,37 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const mongoose = require('mongoose');  // Corrected mongoose import
 const TokenManager = require('./tokenManager');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const mongoose = require('mongoose');
-
-// Connect to MongoDB (add this right after your dotenv config)
+// Corrected MongoDB connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/streammanager', {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000,  // Added timeout settings
+    socketTimeoutMS: 45000
 })
     .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+        process.exit(1);  // Exit process on connection failure
+    });
 
+// Add connection event handlers
+mongoose.connection.on('connected', () => {
+    console.log(`Mongoose connected to ${mongoose.connection.host}`);
+});
+
+mongoose.connection.on('error', (err) => {
+    console.error('Mongoose connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('Mongoose disconnected');
+});
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -508,7 +524,7 @@ async function getUserId(username, accessToken) {
     });
     return response.data.data[0]?.id;
 }
-const ModAction = require('./models/ModAction');
+const ModAction = require('./models/modAction'); // Ensure this path is correct
 
 async function logModAction(data) {
     try {
