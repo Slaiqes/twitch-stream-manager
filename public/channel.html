@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<link rel="icon" href="/images/twitch-logo.png" type="image/png">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Channel Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <header class="app-header">
+        <div class="container">
+            <div class="header-content">
+                <h1>Channel Manager</h1>
+                <a href="/hub.html" class="btn btn-primary" id="backToHubBtn">Back to Hub</a>
+
+            </div>
+    </header>
+
+    <div class="main-content">
+        <aside class="sidebar">
+            <div class="channel-profile">
+                <img id="channelAvatar" src="" alt="Channel Avatar" class="profile-avatar">
+                <h2 id="channelName">Loading...</h2>
+                <div class="channel-meta">
+                    <span id="channelStatus" class="badge">Connecting...</span>
+                    <span id="tokenStatus" class="badge">Token: Loading...</span>
+                </div>
+            </div>
+            <nav class="side-nav">
+                <a href="#moderation" class="active">Moderation</a>
+                <a href="#stream-info">Stream Info</a>
+                <a href="#commercials">Commercials</a>
+                <a href="#mod-stats">Mod Actions</a>
+            </nav>
+        </aside>
+
+        <main class="content-area">
+            <section id="moderation" class="section-content">
+                <h2>Moderation Tools</h2>
+
+                <div class="tool-grid">
+                    <!-- Ban User -->
+                    <div class="action-card">
+                        <h3>Ban User</h3>
+                        <div class="form-group">
+                            <input type="text" id="banUsername" placeholder="Username" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input type="text" id="banReason" placeholder="Reason (optional)" class="form-control">
+                        </div>
+                        <button id="banUser" class="btn btn-danger">Ban User</button>
+                        <div id="banResult" class="result-message"></div>
+                    </div>
+
+                    <!-- Timeout User -->
+                    <div class="action-card">
+                        <h3>Timeout User</h3>
+                        <div class="form-group">
+                            <input type="text" id="timeoutUsername" placeholder="Username" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <select id="timeoutDuration" class="form-control">
+                                <option value="300">5 minutes</option>
+                                <option value="600">10 minutes</option>
+                                <option value="1800">30 minutes</option>
+                                <option value="3600">1 hour</option>
+                                <option value="86400">1 day</option>
+                                <option value=" 1209600">2 weeks</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <input type="text" id="timeoutReason" placeholder="Reason (optional)" class="form-control">
+                        </div>
+                        <button id="timeoutUser" class="btn btn-warning">Timeout User</button>
+                        <div id="timeoutResult" class="result-message"></div>
+                    </div>
+
+                    <!-- Mod/Unmod -->
+                    <div class="action-card">
+                        <h3>Moderator Management</h3>
+                        <div class="form-group">
+                            <input type="text" id="modUsername" placeholder="Username" class="form-control">
+                        </div>
+                        <div class="button-group">
+                            <button id="modUser" class="btn btn-primary">Make Mod</button>
+                            <button id="unmodUser" class="btn btn-danger">Remove Mod</button>
+                        </div>
+                        <div id="modResult" class="result-message"></div>
+                    </div>
+                    <!-- New VIP Management card -->
+                    <div class="action-card">
+                        <h3>VIP Management</h3>
+                        <div class="form-group">
+                            <input type="text" id="vipUsername" placeholder="Username" class="form-control">
+                        </div>
+                        <div class="button-group">
+                            <button id="addVip" class="btn btn-primary">Add VIP</button>
+                            <button id="removeVip" class="btn btn-danger">Remove VIP</button>
+                        </div>
+                        <div id="vipResult" class="result-message"></div>
+                    </div>
+                </div>
+
+            </section>
+
+            <section id="stream-info" class="section-content" style="display:none;">
+                <h2>Stream Information</h2>
+
+                <div class="stream-info">
+                    <div class="stream-info-item">
+                        <h3>Current Status</h3>
+                        <p id="streamStatus" class="stream-info-value">Loading...</p>
+                    </div>
+                    <div class="stream-info-item">
+                        <h3>Current Title</h3>
+                        <p id="streamTitle" class="stream-info-value">Loading...</p>
+                    </div>
+                    <div class="stream-info-item">
+                        <h3>Current Category</h3>
+                        <p id="streamCategory" class="stream-info-value">Loading...</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Update Stream Info</h3>
+                    <div class="form-group">
+                        <label for="streamTitleInput">New Title</label>
+                        <input type="text" id="streamTitleInput" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="streamCategoryInput">New Category</label>
+                        <input type="text" id="streamCategoryInput" class="form-control"
+                            placeholder="Search categories...">
+                        <div id="categoryResults" class="search-results"></div>
+                    </div>
+                    <button id="updateStreamInfo" class="btn btn-primary">Update Stream Info</button>
+                    <div id="streamUpdateResult" class="result-message"></div>
+                </div>
+            </section>
+
+            <section id="commercials" class="section-content" style="display:none;">
+                <h2>Commercial Breaks</h2>
+
+                <div class="card">
+                    <div class="form-group">
+                        <label for="commercialLength">Commercial Length</label>
+                        <select id="commercialLength" class="form-control">
+                            <option value="30">30 seconds</option>
+                            <option value="60">60 seconds</option>
+                            <option value="90">90 seconds</option>
+                            <option value="120">120 seconds</option>
+                            <option value="150">150 seconds</option>
+                            <option value="180">180 seconds</option>
+                        </select>
+                    </div>
+                    <button id="runCommercial" class="btn btn-primary">Run Commercial</button>
+                    <div id="commercialResult" class="result-message"></div>
+                </div>
+            </section>
+
+            <!-- New Mod Action Rankings Section -->
+            <section id="mod-stats" class="section-content">
+                <div class="section-header">
+                    <h2>Mod Action Rankings</h2>
+                    <div class="timeframe-selector">
+                        <select id="statsTimeframe" class="form-control">
+                            <option value="30">Last 30 Days</option>
+                            <option value="60">Last 60 Days</option>
+                            <option value="180">Last 180 Days</option>
+                            <option value="360">Last 360 Days</option>
+                            <option value="0">All Time</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="stats-container">
+                    <div class="stats-card">
+                        <div class="stats-table-container">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>Moderator</th>
+                                        <th>Total Actions</th>
+                                        <th>Timeouts</th>
+                                        <th>Bans</th>
+                                        <th>Actions/Day</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modStatsBody">
+                                    <!-- Data will load here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="stats-chart-container">
+                            <canvas id="modStatsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+        </main>
+    </div>
+
+    <script src="/js/channel.js"></script>
+</body>
+
+</html>
