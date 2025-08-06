@@ -2,29 +2,26 @@ let currentChannel = null;
 let channelData = null;
 let modStatsChart = null;
 
-// Initialize channel page
 document.addEventListener('DOMContentLoaded', async () => {
-    currentChannel = new URLSearchParams(window.location.search).get('channel');
-    if (!currentChannel) {
+    const pathParts = window.location.pathname.split('/').filter(part => part);
+    if (pathParts[0] === 'c' && pathParts[1]) {
+        currentChannel = pathParts[1];
+    }
+    else if (new URLSearchParams(window.location.search).get('channel')) {
+        window.location.href = `/c/${new URLSearchParams(window.location.search).get('channel')}`;
+        return;
+    }
+    else {
         window.location.href = '/hub';
         return;
     }
 
-    // Load channel data
     await loadChannelData();
-
-    // Set up navigation
     setupNavigation();
-
-    // Load initial section
     showSection('moderation');
-
-    // Set up action handlers
     setupActionHandlers();
-
     document.getElementById('statsTimeframe').addEventListener('change', loadModStats);
     loadModStats();
-
 });
 
 async function loadChannelData() {
