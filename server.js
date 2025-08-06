@@ -3,7 +3,8 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
-const mongoose = require('mongoose');  // Corrected mongoose import
+const mongoose = require('mongoose');
+const Token = require('./models/Token'); // This was missing
 const TokenManager = require('./tokenManager');
 
 const app = express();
@@ -141,9 +142,10 @@ app.get('/c/:channel', (req, res) => {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Twitch callback
+// Twitch OAuth Callback
 app.get('/auth/twitch/callback', async (req, res) => {
     try {
+        // 1. Exchange code for tokens
         const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
             params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
@@ -151,59 +153,91 @@ app.get('/auth/twitch/callback', async (req, res) => {
                 code: req.query.code,
                 grant_type: 'authorization_code',
                 redirect_uri: process.env.TWITCH_REDIRECT_URI
-            }
+            },
+            timeout: 5000 // Add timeout for security
         });
 
+        // 2. Get channel info from Twitch
         const userResponse = await axios.get('https://api.twitch.tv/helix/users', {
             headers: {
                 'Authorization': `Bearer ${response.data.access_token}`,
                 'Client-Id': process.env.TWITCH_CLIENT_ID
-            }
+            },
+            timeout: 5000
         });
 
+        if (!userResponse.data.data?.length) {
+            throw new Error('No channel data returned from Twitch');
+        }
+
         const channelData = userResponse.data.data[0];
+
+        // 3. Save to MongoDB
         const tokenManager = new TokenManager(channelData.login);
-        await tokenManager.saveTokens(response.data);
+        const saveResult = await tokenManager.saveTokens(response.data, channelData);
 
-        // Save channel info
-        fs.writeFileSync(
-            path.join(__dirname, 'channel_tokens', `${channelData.login}_info.json`),
-            JSON.stringify({
-                ...channelData,
-                connectedAt: Date.now()
-            })
-        );
+        if (!saveResult) {
+            throw new Error('Failed to save tokens to database');
+        }
 
+        // 4. Redirect to channel manager
         res.redirect(`/c/${channelData.login}`);
     } catch (error) {
-        console.error('OAuth error:', error.response?.data || error.message);
-        res.redirect('/hub?error=auth_failed');
+        console.error('OAuth error:', {
+            message: error.message,
+            response: error.response?.data,
+            stack: error.stack
+        });
+
+        // More detailed error redirect
+        const errorType = error.response?.status === 400 ? 'invalid_code' : 'auth_failed';
+        res.redirect(`/hub?error=${errorType}`);
     }
 });
 
-// Channel endpoints
-app.get('/api/channels', (req, res) => {
-    const tokenDir = path.join(__dirname, 'channel_tokens');
-    if (!fs.existsSync(tokenDir)) return res.json([]);
+// Channel List Endpoint
+app.get('/api/channels', async (req, res) => {
+    try {
+        const channels = await Token.aggregate([
+            {
+                $project: {
+                    _id: 0,
+                    id: '$channelData.id',
+                    login: '$channelData.login',
+                    display_name: '$channelData.display_name',
+                    profile_image_url: '$channelData.profile_image_url',
+                    broadcaster_type: '$channelData.broadcaster_type',
+                    connectedAt: '$channelData.connectedAt',
+                    expiresAt: 1,
+                    status: {
+                        $cond: {
+                            if: { $gt: ['$expiresAt', new Date()] },
+                            then: 'connected',
+                            else: 'expired'
+                        }
+                    },
+                    refreshAt: {
+                        $subtract: ['$expiresAt', 5 * 60 * 1000] // 5 minutes before expiry
+                    }
+                }
+            },
+            { $sort: { connectedAt: -1 } } // Newest first
+        ]);
 
-    const channels = fs.readdirSync(tokenDir)
-        .filter(file => file.endsWith('_info.json'))
-        .map(file => {
-            const data = JSON.parse(fs.readFileSync(path.join(tokenDir, file)));
-            const tokenFile = file.replace('_info.json', '.json');
-            const tokens = fs.existsSync(path.join(tokenDir, tokenFile)) ?
-                JSON.parse(fs.readFileSync(path.join(tokenDir, tokenFile))) : null;
-
-            return {
-                ...data,
-                status: tokens?.expiresAt > Date.now() ? 'connected' : 'expired',
-                expiresAt: tokens?.expiresAt,
-                refreshAt: tokens?.expiresAt - 300000
-            };
+        res.json(channels);
+    } catch (error) {
+        console.error('Channel list error:', {
+            message: error.message,
+            stack: error.stack
         });
 
-    res.json(channels);
+        res.status(500).json({
+            error: 'Failed to fetch channels',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 });
+
 app.get('/api/:channel/user-id', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
