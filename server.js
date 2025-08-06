@@ -119,15 +119,17 @@ app.get('/auth/twitch', (req, res) => {
     res.redirect(authUrl);
 });
 
-// Add explicit routes for each page:
+// Redirect root to /login
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/login.html'));
+    res.redirect(302, '/login');
 });
 
+// Serve login page
 app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/login.html'));
 });
 
+// Other routes remain the same
 app.get('/hub', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/hub.html'));
 });
@@ -136,7 +138,7 @@ app.get('/c/:channel', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/channel.html'));
 });
 
-// Serve static files from public directory (CSS, JS, images)
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Twitch callback
