@@ -119,7 +119,15 @@ app.get('/auth/twitch', (req, res) => {
     res.redirect(authUrl);
 });
 
-// Clean URL routes
+// Add explicit routes for each page:
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/login.html'));
+});
+
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/login.html'));
+});
+
 app.get('/hub', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/hub.html'));
 });
@@ -128,17 +136,8 @@ app.get('/c/:channel', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/channel.html'));
 });
 
-// Existing static files and API routes
-app.use(express.static('public'));
-
-// Redirect old URLs
-app.get('/channel.html', (req, res) => {
-    const channel = req.query.channel;
-    if (channel) {
-        return res.redirect(301, `/c/${channel}`);
-    }
-    res.redirect(301, '/hub');
-});
+// Serve static files from public directory (CSS, JS, images)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Twitch callback
 app.get('/auth/twitch/callback', async (req, res) => {
