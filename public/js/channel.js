@@ -6,7 +6,7 @@ let modStatsChart = null;
 document.addEventListener('DOMContentLoaded', async () => {
     currentChannel = new URLSearchParams(window.location.search).get('channel');
     if (!currentChannel) {
-        window.location.href = '/hub.html';
+        window.location.href = '/hub';
         return;
     }
 
@@ -51,7 +51,7 @@ async function loadChannelData() {
     } catch (error) {
         console.error('Failed to load channel data:', error);
         alert('Failed to load channel data');
-        window.location.href = '/hub.html';
+        window.location.href = '/hub';
     }
 }
 

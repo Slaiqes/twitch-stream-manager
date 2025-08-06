@@ -12,7 +12,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     });
 
     if (response.ok) {
-        window.location.href = '/hub.html';
+        window.location.href = '/hub';
     } else {
         alert('Login failed!');
     }
@@ -37,7 +37,7 @@ async function loadChannels() {
                 <h3>${channel.display_name}</h3>
                 <p>${channel.broadcaster_type || 'Streamer'}</p>
                 <span class="channel-status status-${channel.status}">${channel.status}</span>
-                <a href="/channel.html?channel=${channel.login}" class="btn btn-primary" style="margin-top: 1rem;">Manage Channel</a>
+                <a href="/c/${channel.login}" class="btn btn-primary" style="margin-top: 1rem;">Manage Channel</a>
             </div>
         `;
         channelList.appendChild(channelCard);
@@ -50,7 +50,7 @@ document.getElementById('connectChannel')?.addEventListener('click', () => {
 });
 
 // Initialize hub
-if (window.location.pathname.includes('hub.html')) {
+if (window.location.pathname.includes('hub')) {
     loadChannels();
     setInterval(loadChannels, 60000); // Refresh every minute
 }

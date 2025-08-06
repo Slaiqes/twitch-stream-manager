@@ -119,6 +119,27 @@ app.get('/auth/twitch', (req, res) => {
     res.redirect(authUrl);
 });
 
+// Clean URL routes
+app.get('/hub', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/hub.html'));
+});
+
+app.get('/c/:channel', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/channel.html'));
+});
+
+// Existing static files and API routes
+app.use(express.static('public'));
+
+// Redirect old URLs
+app.get('/channel.html', (req, res) => {
+    const channel = req.query.channel;
+    if (channel) {
+        return res.redirect(301, `/c/${channel}`);
+    }
+    res.redirect(301, '/hub');
+});
+
 // Twitch callback
 app.get('/auth/twitch/callback', async (req, res) => {
     try {
@@ -152,10 +173,10 @@ app.get('/auth/twitch/callback', async (req, res) => {
             })
         );
 
-        res.redirect(`/channel.html?channel=${channelData.login}`);
+        res.redirect(`/c/${channelData.login}`);
     } catch (error) {
         console.error('OAuth error:', error.response?.data || error.message);
-        res.redirect('/hub.html?error=auth_failed');
+        res.redirect('/hub?error=auth_failed');
     }
 });
 

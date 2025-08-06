@@ -11,7 +11,9 @@
     "axios": "^1.6.7",
     "dotenv": "^16.4.1",
     "express": "^4.18.2",
+    "express-session": "^1.18.2",
     "fs": "^0.0.1-security",
+    "memorystore": "^1.6.7",
     "mongoose": "^8.17.0",
     "path": "^0.12.7"
   },
