@@ -5,26 +5,67 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stream Manager - Login</title>
-    <link rel="icon" href="/images/twitch-logo.png" type="image/png">
+    <link rel="icon" href="/images/pfp_logo.png" type="image/png">
     <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
 <body class="login-page">
-    <div class="login-container">
-        <div class="login-header">
-            <img src="/images/twitch-logo.png" alt="Twitch" class="logo">
-            <h1>Stream Manager</h1>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <img src="/images/pfp_logo.png" alt="Twitch" class="auth-logo">
+                <h1 class="auth-title">Stream Manager</h1>
+                <p class="auth-subtitle">Manage your Twitch channel with ease</p>
+            </div>
+
+            <div class="auth-tabs">
+                <div class="tab active" data-tab="admin">Admin Login</div>
+                <div class="tab" data-tab="streamer">Streamer Login</div>
+            </div>
+
+            <!-- Admin Login Form -->
+            <form id="adminLoginForm" class="auth-form active" data-form="admin">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="username" placeholder="Enter admin username" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="password" placeholder="Enter password" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </button>
+            </form>
+
+            <!-- Streamer Login -->
+            <div class="auth-form" data-form="streamer">
+                <div class="oauth-buttons">
+                    <a href="/auth/twitch" class="btn btn-twitch btn-block">
+                        <img src="/images/twitch-icon-white.png" alt="Twitch" class="oauth-icon">
+                        Login with Twitch
+                    </a>
+                </div>
+                <div class="auth-divider">
+                    <span>OR</span>
+                </div>
+                <p class="auth-note">Admins can also connect channels from the hub</p>
+            </div>
         </div>
-        <form id="loginForm" class="login-form">
-            <div class="form-group">
-                <input type="text" id="username" placeholder="Username" required>
-            </div>
-            <div class="form-group">
-                <input type="password" id="password" placeholder="Password" required>
-            </div>
-            <button type="submit" class="btn btn-primary">Login</button>
-        </form>
+
+        <div class="auth-footer">
+            <p>© 2023 Stream Manager. All rights reserved.</p>
+        </div>
     </div>
+
     <script src="/js/dashboard.js"></script>
 </body>
 

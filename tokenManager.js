@@ -1,6 +1,8 @@
 const axios = require('axios');
 const Token = require('./models/Token');
 const { encrypt, decrypt } = require('./utils/crypto');
+const jwt = require('jsonwebtoken');
+
 class TokenManager {
     constructor(channelName) {
         this.channelName = channelName;
@@ -8,7 +10,15 @@ class TokenManager {
 
     async getTokens() {
         try {
-            return await Token.findOne({ channelName: this.channelName });
+            const token = await Token.findOne({ channelName: this.channelName });
+            if (!token) return null;
+
+            // Decrypt tokens before returning
+            return {
+                ...token.toObject(),
+                accessToken: decrypt(token.accessToken),
+                refreshToken: decrypt(token.refreshToken)
+            };
         } catch (error) {
             console.error(`Error fetching tokens for ${this.channelName}:`, error);
             return null;
@@ -17,30 +27,54 @@ class TokenManager {
 
     async saveTokens(tokens, channelData) {
         try {
-            const { encrypt } = require('./utils/crypto'); // Move require inside to catch errors
+            // Validate required fields
+            if (!tokens.access_token || !tokens.refresh_token || !tokens.expires_in) {
+                throw new Error('Invalid tokens provided');
+            }
 
             const tokenData = {
                 channelName: this.channelName,
                 accessToken: encrypt(tokens.access_token),
                 refreshToken: encrypt(tokens.refresh_token),
                 expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)),
-                scope: tokens.scope,
-                tokenType: tokens.token_type,
+                scope: tokens.scope || [],
+                tokenType: tokens.token_type || 'bearer',
                 channelData: {
                     ...channelData,
-                    connectedAt: new Date()
+                    connectedAt: new Date(),
+                    status: 'connected'
                 }
             };
 
-            await Token.findOneAndUpdate(
+            const options = {
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true
+            };
+
+            const savedToken = await Token.findOneAndUpdate(
                 { channelName: this.channelName },
                 tokenData,
-                { upsert: true, new: true }
+                options
             );
-            return true;
+
+            // Generate a JWT for the streamer if this is not an admin action
+            if (!this.isAdminAction()) {
+                const userToken = jwt.sign(
+                    {
+                        role: 'streamer',
+                        channel: this.channelName
+                    },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '8h' }
+                );
+                return { saved: true, userToken };
+            }
+
+            return { saved: true };
         } catch (error) {
             console.error(`Failed to save tokens for ${this.channelName}:`, error.message);
-            return false;
+            return { saved: false, error: error.message };
         }
     }
 
@@ -58,13 +92,25 @@ class TokenManager {
                     client_secret: process.env.TWITCH_CLIENT_SECRET,
                     grant_type: 'refresh_token',
                     refresh_token: token.refreshToken
-                }
+                },
+                timeout: 5000 // Add timeout for security
             });
 
-            await this.saveTokens(response.data, token.channelData);
-            return true;
+            const saveResult = await this.saveTokens(response.data, token.channelData);
+            return saveResult.saved;
         } catch (error) {
-            console.error(`Token refresh failed for ${this.channelName}:`, error.response?.data || error.message);
+            console.error(`Token refresh failed for ${this.channelName}:`, {
+                message: error.message,
+                response: error.response?.data,
+                stack: error.stack
+            });
+
+            // Mark token as expired if refresh failed
+            await Token.updateOne(
+                { channelName: this.channelName },
+                { 'channelData.status': 'expired' }
+            );
+
             return false;
         }
     }
@@ -81,7 +127,7 @@ class TokenManager {
                 return (await this.getTokens())?.accessToken;
             }
 
-            return decrypt(token.accessToken);
+            return token.accessToken;
         } catch (error) {
             console.error(`Error getting access token for ${this.channelName}:`, error);
             return null;
@@ -90,8 +136,15 @@ class TokenManager {
 
     async getChannelData() {
         try {
-            const token = await this.getTokens();
-            return token?.channelData;
+            const token = await Token.findOne({ channelName: this.channelName });
+            if (!token) return null;
+
+            return {
+                ...token.channelData,
+                login: this.channelName,
+                status: token.channelData.status || 'connected',
+                refreshAt: new Date(token.expiresAt.getTime() - 5 * 60 * 1000)
+            };
         } catch (error) {
             console.error(`Error getting channel data for ${this.channelName}:`, error);
             return null;
@@ -100,12 +153,31 @@ class TokenManager {
 
     async disconnectChannel() {
         try {
-            await Token.deleteOne({ channelName: this.channelName });
-            return true;
+            const result = await Token.deleteOne({ channelName: this.channelName });
+            return result.deletedCount > 0;
         } catch (error) {
             console.error(`Error disconnecting channel ${this.channelName}:`, error);
             return false;
         }
+    }
+
+    async updateChannelData(update) {
+        try {
+            await Token.updateOne(
+                { channelName: this.channelName },
+                { $set: { channelData: update } }
+            );
+            return true;
+        } catch (error) {
+            console.error(`Error updating channel data for ${this.channelName}:`, error);
+            return false;
+        }
+    }
+
+    isAdminAction() {
+        // Implement logic to check if this is an admin-initiated action
+        // This could check the call stack or use a context parameter
+        return false; // Default to false for safety
     }
 }
 

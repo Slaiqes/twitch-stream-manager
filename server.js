@@ -2,28 +2,30 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
-const fs = require('fs');
 const mongoose = require('mongoose');
-const Token = require('./models/Token'); // This was missing
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const Token = require('./models/Token');
 const TokenManager = require('./tokenManager');
+const ModAction = require('./models/modAction');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Corrected MongoDB connection
+// MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/streammanager', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 5000,  // Added timeout settings
+    serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000
 })
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => {
         console.error('MongoDB connection error:', err);
-        process.exit(1);  // Exit process on connection failure
+        process.exit(1);
     });
 
-// Add connection event handlers
+// Connection event handlers
 mongoose.connection.on('connected', () => {
     console.log(`Mongoose connected to ${mongoose.connection.host}`);
 });
@@ -35,132 +37,113 @@ mongoose.connection.on('error', (err) => {
 mongoose.connection.on('disconnected', () => {
     console.log('Mongoose disconnected');
 });
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Routes
-app.post('/api/login', (req, res) => {
-    if (req.body.username === process.env.ADMIN_USERNAME &&
-        req.body.password === process.env.ADMIN_PASSWORD) {
-        res.json({ success: true });
-    } else {
-        res.status(401).json({ error: 'Invalid credentials' });
+// Authentication Middleware
+function authenticate(req, res, next) {
+    const token = req.headers.authorization?.split(' ')[1] || req.cookies?.token;
+
+    if (!token) {
+        return res.status(401).json({ error: 'Authentication required' });
     }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+}
+
+function checkChannelAccess(req, res, next) {
+    const channelName = req.params.channelName;
+    const { role, channel } = req.user;
+
+    if (role === 'admin') return next();
+    if (channel === channelName) return next();
+
+    return res.status(403).json({ error: 'Access denied' });
+}
+
+// Routes
+app.get('/', (req, res) => {
+    res.redirect('/login');
 });
 
-// Twitch OAuth
+// Admin Login
+app.post('/api/admin/login', (req, res) => {
+    const { username, password } = req.body;
+
+    if (username === process.env.ADMIN_USERNAME &&
+        password === process.env.ADMIN_PASSWORD) {
+
+        const token = jwt.sign(
+            { role: 'admin' },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        return res.json({
+            token,
+            role: 'admin'
+        });
+    }
+
+    return res.status(401).json({ error: 'Invalid credentials' });
+});
+
+// Twitch OAuth Routes
 app.get('/auth/twitch', (req, res) => {
+    // Determine if this is an admin connecting a channel or streamer login
+    const isAdminConnecting = req.headers.referer?.includes('/hub');
+    const state = isAdminConnecting ? 'admin_connect' : 'streamer_login';
+
     const scopes = [
-        'analytics:read:extensions',
-        'clips:edit',
-        'bits:read',
-        'analytics:read:games',
-        'user:edit:broadcast',
-        'user:read:broadcast',
-        'chat:read',
-        'chat:edit',
-        'channel:moderate',
-        'channel:read:subscriptions',
-        'moderation:read',
-        'channel:read:redemptions',
-        'channel:edit:commercial',
-        'channel:manage:extensions',
-        'channel:manage:broadcast',
-        'channel:manage:redemptions',
-        'channel:read:editors',
-        'channel:manage:videos',
-        'user:read:subscriptions',
-        'channel:manage:polls',
-        'channel:manage:predictions',
-        'channel:read:polls',
-        'channel:read:predictions',
-        'channel:read:goals',
-        'moderator:read:automod_settings',
-        'moderator:manage:automod_settings',
         'moderator:manage:banned_users',
-        'moderator:read:blocked_terms',
-        'moderator:manage:blocked_terms',
-        'moderator:read:chat_settings',
-        'moderator:manage:chat_settings',
-        'moderator:manage:announcements',
-        'moderator:manage:chat_messages',
+        'channel:manage:broadcast',
+        'channel:read:subscriptions',
         'channel:manage:moderators',
         'channel:read:vips',
         'channel:manage:vips',
-        'moderator:read:shield_mode',
-        'moderator:manage:shield_mode',
-        'moderator:read:shoutouts',
-        'moderator:manage:shoutouts',
-        'moderator:read:followers',
-        'channel:read:guest_star',
-        'channel:manage:guest_star',
-        'moderator:read:guest_star',
-        'moderator:manage:guest_star',
-        'channel:bot',
-        'user:bot',
-        'user:read:chat',
-        'channel:manage:ads',
-        'channel:read:ads',
-        'user:read:moderated_channels',
-        'moderator:read:unban_requests',
-        'moderator:manage:unban_requests',
-        'moderator:read:suspicious_users',
-        'moderator:manage:warnings'
-
+        'channel:edit:commercial'
     ].join('+');
 
     const authUrl = `https://id.twitch.tv/oauth2/authorize?response_type=code` +
         `&client_id=${process.env.TWITCH_CLIENT_ID}` +
         `&redirect_uri=${encodeURIComponent(process.env.TWITCH_REDIRECT_URI)}` +
         `&scope=${scopes}` +
+        `&state=${state}` +
         `&force_verify=true`;
 
     res.redirect(authUrl);
 });
 
-// Redirect root to /login
-app.get('/', (req, res) => {
-    res.redirect(302, '/login');
-});
-
-// Serve login page
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/login.html'));
-});
-
-// Other routes remain the same
-app.get('/hub', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/hub.html'));
-});
-
-app.get('/c/:channel', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/channel.html'));
-});
-
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
-
 // Twitch OAuth Callback
 app.get('/auth/twitch/callback', async (req, res) => {
     try {
+        const { code, state } = req.query;
+
         // 1. Exchange code for tokens
-        const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+        const tokenResponse = await axios.post('https://id.twitch.tv/oauth2/token', null, {
             params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
                 client_secret: process.env.TWITCH_CLIENT_SECRET,
-                code: req.query.code,
+                code,
                 grant_type: 'authorization_code',
                 redirect_uri: process.env.TWITCH_REDIRECT_URI
             },
-            timeout: 5000 // Add timeout for security
+            timeout: 5000
         });
 
-        // 2. Get channel info from Twitch
+        // 2. Get channel info
         const userResponse = await axios.get('https://api.twitch.tv/helix/users', {
             headers: {
-                'Authorization': `Bearer ${response.data.access_token}`,
+                'Authorization': `Bearer ${tokenResponse.data.access_token}`,
                 'Client-Id': process.env.TWITCH_CLIENT_ID
             },
             timeout: 5000
@@ -170,34 +153,59 @@ app.get('/auth/twitch/callback', async (req, res) => {
             throw new Error('No channel data returned from Twitch');
         }
 
-        const channelData = userResponse.data.data[0];
+        const channelInfo = userResponse.data.data[0];
 
-        // 3. Save to MongoDB
-        const tokenManager = new TokenManager(channelData.login);
-        const saveResult = await tokenManager.saveTokens(response.data, channelData);
+        // 3. Handle based on state
+        if (state === 'admin_connect') {
+            // ADMIN CONNECTING A CHANNEL
+            const tokenManager = new TokenManager(channelInfo.login);
+            await tokenManager.saveTokens(tokenResponse.data, channelInfo);
 
-        if (!saveResult) {
-            throw new Error('Failed to save tokens to database');
+            return res.redirect('/hub');
+        } else {
+            // STREAMER LOGIN
+            const token = jwt.sign(
+                {
+                    role: 'streamer',
+                    channel: channelInfo.login
+                },
+                process.env.JWT_SECRET,
+                { expiresIn: '8h' }
+            );
+
+            // Use a login-success page to set tokens securely
+            return res.redirect(`/login-success?token=${token}&channel=${channelInfo.login}`);
         }
-
-        // 4. Redirect to channel manager
-        res.redirect(`/c/${channelData.login}`);
     } catch (error) {
-        console.error('OAuth error:', {
-            message: error.message,
-            response: error.response?.data,
-            stack: error.stack
-        });
-
-        // More detailed error redirect
-        const errorType = error.response?.status === 400 ? 'invalid_code' : 'auth_failed';
-        res.redirect(`/hub?error=${errorType}`);
+        console.error('OAuth callback error:', error);
+        res.redirect('/login?error=oauth_failed');
     }
 });
 
-// Channel List Endpoint
-app.get('/api/channels', async (req, res) => {
+// Login success page to set tokens
+app.get('/login-success', (req, res) => {
+    res.send(`
+        <html>
+            <body>
+                <script>
+                    localStorage.setItem('authToken', '${req.query.token}');
+                    localStorage.setItem('userRole', 'streamer');
+                    localStorage.setItem('channelName', '${req.query.channel}');
+                    window.location.href = '/c/${req.query.channel}';
+                </script>
+            </body>
+        </html>
+    `);
+});
+
+// Channel List
+app.get('/api/channels', authenticate, async (req, res) => {
     try {
+        // Only admins can list all channels
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const channels = await Token.aggregate([
             {
                 $project: {
@@ -217,20 +225,16 @@ app.get('/api/channels', async (req, res) => {
                         }
                     },
                     refreshAt: {
-                        $subtract: ['$expiresAt', 5 * 60 * 1000] // 5 minutes before expiry
+                        $subtract: ['$expiresAt', 5 * 60 * 1000]
                     }
                 }
             },
-            { $sort: { connectedAt: -1 } } // Newest first
+            { $sort: { connectedAt: -1 } }
         ]);
 
         res.json(channels);
     } catch (error) {
-        console.error('Channel list error:', {
-            message: error.message,
-            stack: error.stack
-        });
-
+        console.error('Channel list error:', error);
         res.status(500).json({
             error: 'Failed to fetch channels',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -238,35 +242,9 @@ app.get('/api/channels', async (req, res) => {
     }
 });
 
-app.get('/api/:channel/user-id', async (req, res) => {
+// Channel Actions
+app.post('/api/:channel/ban', authenticate, checkChannelAccess, async (req, res) => {
     try {
-        const tokenManager = new TokenManager(req.params.channel);
-        const accessToken = await tokenManager.getAccessToken();
-
-        const response = await axios.get('https://api.twitch.tv/helix/users', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Client-Id': process.env.TWITCH_CLIENT_ID
-            },
-            params: { login: req.query.username }
-        });
-
-        if (response.data.data.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        res.json({ userId: response.data.data[0].id });
-    } catch (error) {
-        console.error('User ID lookup error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to lookup user ID' });
-    }
-});
-// Channel actions
-app.post('/api/:channel/ban', async (req, res) => {
-    try {
-        if (!req.body.userId) {
-            return res.status(400).json({ error: 'User ID is required' });
-        }
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
         const broadcasterId = await getUserId(req.params.channel, accessToken);
@@ -275,7 +253,7 @@ app.post('/api/:channel/ban', async (req, res) => {
             data: {
                 user_id: req.body.userId,
                 reason: req.body.reason || '',
-                duration: req.body.duration || 0
+                duration: 0 // Permanent ban
             }
         }, {
             headers: {
@@ -289,7 +267,6 @@ app.post('/api/:channel/ban', async (req, res) => {
             }
         });
 
-        // Log the ban action
         await logModAction({
             channelId: broadcasterId,
             moderatorId: broadcasterId,
@@ -299,19 +276,13 @@ app.post('/api/:channel/ban', async (req, res) => {
             reason: req.body.reason
         });
 
-        res.json({ success: true, data: response.data });
+        res.json({ success: true });
     } catch (error) {
         handleApiError(res, error);
     }
 });
 
-app.post('/api/:channel/unban', async (req, res) => {
-    await handleModAction(req, res, 'unban', null, {
-        user_id: req.body.userId
-    });
-});
-
-app.post('/api/:channel/timeout', async (req, res) => {
+app.post('/api/:channel/timeout', authenticate, checkChannelAccess, async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -321,7 +292,7 @@ app.post('/api/:channel/timeout', async (req, res) => {
             data: {
                 user_id: req.body.userId,
                 reason: req.body.reason || '',
-                duration: parseInt(req.body.duration) || 300 // Default to 5 minutes
+                duration: parseInt(req.body.duration) || 300
             }
         }, {
             headers: {
@@ -334,51 +305,51 @@ app.post('/api/:channel/timeout', async (req, res) => {
                 moderator_id: broadcasterId
             }
         });
+
         await logModAction({
             channelId: broadcasterId,
             moderatorId: broadcasterId,
             moderatorName: req.params.channel,
             actionType: 'timeout',
             targetUser: req.body.userId,
-            duration: req.body.duration
+            duration: req.body.duration,
+            reason: req.body.reason
         });
-        res.json({ success: true, data: response.data });
+
+        res.json({ success: true });
     } catch (error) {
         handleApiError(res, error);
     }
 });
 
-app.post('/api/:channel/untimeout', async (req, res) => {
-    await handleModAction(req, res, 'untimeout', null, {
+// Moderator Management
+app.post('/api/:channel/mod', authenticate, checkChannelAccess, async (req, res) => {
+    await handleModAction(req, res, 'mod', {
         user_id: req.body.userId
     });
 });
 
-app.post('/api/:channel/mod', async (req, res) => {
-    await handleModAction(req, res, 'mod', null, {
+app.post('/api/:channel/unmod', authenticate, checkChannelAccess, async (req, res) => {
+    await handleModAction(req, res, 'unmod', {
         user_id: req.body.userId
     });
 });
 
-app.post('/api/:channel/unmod', async (req, res) => {
-    await handleModAction(req, res, 'unmod', null, {
+// VIP Management
+app.post('/api/:channel/vip', authenticate, checkChannelAccess, async (req, res) => {
+    await handleModAction(req, res, 'vip', {
         user_id: req.body.userId
     });
 });
 
-app.post('/api/:channel/vip', async (req, res) => {
-    await handleModAction(req, res, 'vip', null, {
+app.post('/api/:channel/unvip', authenticate, checkChannelAccess, async (req, res) => {
+    await handleModAction(req, res, 'unvip', {
         user_id: req.body.userId
     });
 });
 
-app.post('/api/:channel/unvip', async (req, res) => {
-    await handleModAction(req, res, 'unvip', null, {
-        user_id: req.body.userId
-    });
-});
-
-app.post('/api/:channel/commercial', async (req, res) => {
+// Commercials
+app.post('/api/:channel/commercial', authenticate, checkChannelAccess, async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -401,8 +372,8 @@ app.post('/api/:channel/commercial', async (req, res) => {
     }
 });
 
-// Stream management
-app.get('/api/:channel/stream-info', async (req, res) => {
+// Stream Info
+app.get('/api/:channel/stream-info', authenticate, checkChannelAccess, async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -436,7 +407,7 @@ app.get('/api/:channel/stream-info', async (req, res) => {
     }
 });
 
-app.patch('/api/:channel/stream-info', async (req, res) => {
+app.patch('/api/:channel/stream-info', authenticate, checkChannelAccess, async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -459,8 +430,9 @@ app.patch('/api/:channel/stream-info', async (req, res) => {
         handleApiError(res, error);
     }
 });
-// Add this with your other API routes in server.js
-app.get('/api/:channel/mod-stats', async (req, res) => {
+
+// Mod Stats
+app.get('/api/:channel/mod-stats', authenticate, checkChannelAccess, async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -505,51 +477,83 @@ app.get('/api/:channel/mod-stats', async (req, res) => {
         handleApiError(res, error);
     }
 });
-// Helper functions
+
+// User ID Lookup
+app.get('/api/:channel/user-id', authenticate, checkChannelAccess, async (req, res) => {
+    try {
+        const tokenManager = new TokenManager(req.params.channel);
+        const accessToken = await tokenManager.getAccessToken();
+
+        const response = await axios.get('https://api.twitch.tv/helix/users', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID
+            },
+            params: { login: req.query.username }
+        });
+
+        if (response.data.data.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({ userId: response.data.data[0].id });
+    } catch (error) {
+        console.error('User ID lookup error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to lookup user ID' });
+    }
+});
+
+// Static File Routes
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/login.html'));
+});
+
+app.get('/hub', authenticate, (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.redirect('/login');
+    }
+    res.sendFile(path.join(__dirname, 'public/hub.html'));
+});
+
+app.get('/c/:channel', authenticate, (req, res) => {
+    // Check if user has access to this channel
+    if (req.user.role !== 'admin' && req.user.channel !== req.params.channel) {
+        return res.redirect('/login');
+    }
+    res.sendFile(path.join(__dirname, 'public/channel.html'));
+});
+
+// Helper Functions
 async function handleModAction(req, res, action, body = null, params = {}) {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
         const broadcasterId = await getUserId(req.params.channel, accessToken);
 
-        // Add broadcaster_id as moderator_id for all actions
-        params.broadcaster_id = broadcasterId;
-        params.moderator_id = broadcasterId;
-
         let url, method;
         switch (action) {
-            case 'ban':
-                url = 'https://api.twitch.tv/helix/moderation/bans';
-                method = 'post';
-                params.broadcaster_id = broadcasterId;
-                params.moderator_id = broadcasterId;
-                break;
-            case 'unban':
-                url = 'https://api.twitch.tv/helix/moderation/bans';
-                method = 'delete';
-                params.broadcaster_id = broadcasterId;
-                params.moderator_id = broadcasterId;
-                break;
             case 'mod':
                 url = 'https://api.twitch.tv/helix/moderation/moderators';
                 method = 'post';
-                params.broadcaster_id = broadcasterId;
+                params = { broadcaster_id: broadcasterId, user_id: req.body.userId };
                 break;
             case 'unmod':
                 url = 'https://api.twitch.tv/helix/moderation/moderators';
                 method = 'delete';
-                params.broadcaster_id = broadcasterId;
+                params = { broadcaster_id: broadcasterId, user_id: req.body.userId };
                 break;
             case 'vip':
                 url = 'https://api.twitch.tv/helix/channels/vips';
                 method = 'post';
-                params.broadcaster_id = broadcasterId;
+                params = { broadcaster_id: broadcasterId, user_id: req.body.userId };
                 break;
             case 'unvip':
                 url = 'https://api.twitch.tv/helix/channels/vips';
                 method = 'delete';
-                params.broadcaster_id = broadcasterId;
+                params = { broadcaster_id: broadcasterId, user_id: req.body.userId };
                 break;
+            default:
+                throw new Error('Invalid action type');
         }
 
         const response = await axios({
@@ -562,6 +566,15 @@ async function handleModAction(req, res, action, body = null, params = {}) {
                 'Client-Id': process.env.TWITCH_CLIENT_ID,
                 'Content-Type': 'application/json'
             }
+        });
+
+        // Log the mod action
+        await logModAction({
+            channelId: broadcasterId,
+            moderatorId: broadcasterId,
+            moderatorName: req.params.channel,
+            actionType: action,
+            targetUser: req.body.userId
         });
 
         res.json({ success: true, data: response.data });
@@ -580,7 +593,6 @@ async function getUserId(username, accessToken) {
     });
     return response.data.data[0]?.id;
 }
-const ModAction = require('./models/modAction'); // Ensure this path is correct
 
 async function logModAction(data) {
     try {
@@ -591,12 +603,14 @@ async function logModAction(data) {
             actionType: data.actionType,
             targetUser: data.targetUser,
             duration: data.duration,
+            reason: data.reason,
             timestamp: new Date()
         });
     } catch (error) {
         console.error('Failed to log mod action:', error);
     }
 }
+
 function handleApiError(res, error) {
     console.error('API error:', {
         message: error.message,
@@ -604,10 +618,15 @@ function handleApiError(res, error) {
         stack: error.stack
     });
 
-    res.status(500).json({
+    const statusCode = error.response?.status || 500;
+    res.status(statusCode).json({
         error: 'API request failed',
         details: error.response?.data || error.message
     });
 }
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// Start Server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Twitch Client ID: ${process.env.TWITCH_CLIENT_ID}`);
+});

@@ -3,41 +3,68 @@ let channelData = null;
 let modStatsChart = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const pathParts = window.location.pathname.split('/').filter(part => part);
-    if (pathParts[0] === 'c' && pathParts[1]) {
-        currentChannel = pathParts[1];
-    }
-    else if (new URLSearchParams(window.location.search).get('channel')) {
-        window.location.href = `/c/${new URLSearchParams(window.location.search).get('channel')}`;
-        return;
-    }
-    else {
-        window.location.href = '/hub';
+    // Check authentication
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+        window.location.href = '/login';
         return;
     }
 
+    // Get channel from URL
+    const pathParts = window.location.pathname.split('/').filter(part => part);
+    if (pathParts[0] === 'c' && pathParts[1]) {
+        currentChannel = pathParts[1];
+    } else {
+        window.location.href = '/login';
+        return;
+    }
+
+    // Check permissions
+    const userRole = localStorage.getItem('userRole');
+    const userChannel = localStorage.getItem('channelName');
+
+    if (userRole !== 'admin' && userChannel !== currentChannel) {
+        window.location.href = '/login';
+        return;
+    }
+
+    // Hide back to hub button for non-admins
+    if (userRole !== 'admin') {
+        document.getElementById('backToHubBtn').style.display = 'none';
+    }
+
+    // Initialize
     await loadChannelData();
     setupNavigation();
-    showSection('moderation');
     setupActionHandlers();
-    document.getElementById('statsTimeframe').addEventListener('change', loadModStats);
     loadModStats();
+
+    // Update breadcrumb
+    document.getElementById('breadcrumbChannel').textContent = currentChannel;
 });
 
 async function loadChannelData() {
     try {
+        const token = localStorage.getItem('authToken');
+
         // Load channel info
-        const response = await fetch(`/api/channels`);
+        const response = await fetch(`/api/channels`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) throw new Error('Failed to load channels');
+
         const channels = await response.json();
         channelData = channels.find(c => c.login === currentChannel);
 
-        if (!channelData) {
-            throw new Error('Channel not found');
-        }
+        if (!channelData) throw new Error('Channel not found');
 
         // Update UI
         document.getElementById('channelName').textContent = channelData.display_name;
         document.getElementById('channelAvatar').src = channelData.profile_image_url;
+        document.getElementById('headerAvatar').src = channelData.profile_image_url;
 
         // Update status
         updateConnectionStatus();
@@ -52,19 +79,16 @@ async function loadChannelData() {
     }
 }
 
-
-
-
 function updateConnectionStatus() {
     const statusElement = document.getElementById('channelStatus');
     const tokenStatusElement = document.getElementById('tokenStatus');
 
     if (channelData.status === 'connected') {
-        statusElement.textContent = 'Connected';
-        statusElement.className = 'badge status-connected';
+        statusElement.innerHTML = '<i class="fas fa-circle status-icon"></i> Connected';
+        statusElement.className = 'badge badge-lg badge-success';
     } else {
-        statusElement.textContent = 'Disconnected';
-        statusElement.className = 'badge status-expired';
+        statusElement.innerHTML = '<i class="fas fa-circle status-icon"></i> Disconnected';
+        statusElement.className = 'badge badge-lg badge-danger';
     }
 
     // Token expiration info
@@ -73,29 +97,49 @@ function updateConnectionStatus() {
     const now = new Date();
 
     if (now > expiresAt) {
-        tokenStatusElement.textContent = 'Token expired';
-        tokenStatusElement.className = 'badge status-expired';
+        tokenStatusElement.innerHTML = '<i class="fas fa-key"></i> Token expired';
+        tokenStatusElement.className = 'badge badge-secondary badge-danger';
     } else if (now > refreshAt) {
-        tokenStatusElement.textContent = `Token refreshes soon (${Math.round((expiresAt - now) / 1000 / 60)} min left)`;
-        tokenStatusElement.className = 'badge status-warning';
+        const minsLeft = Math.round((expiresAt - now) / 1000 / 60);
+        tokenStatusElement.innerHTML = `<i class="fas fa-key"></i> Expires in ${minsLeft} min`;
+        tokenStatusElement.className = 'badge badge-secondary badge-warning';
     } else {
-        tokenStatusElement.textContent = `Token valid (${Math.round((expiresAt - now) / 1000 / 60)} min left)`;
-        tokenStatusElement.className = 'badge status-connected';
+        const minsLeft = Math.round((expiresAt - now) / 1000 / 60);
+        tokenStatusElement.innerHTML = `<i class="fas fa-key"></i> Valid (${minsLeft} min)`;
+        tokenStatusElement.className = 'badge badge-secondary badge-success';
     }
 }
 
 async function loadStreamInfo() {
     try {
-        const response = await fetch(`/api/${currentChannel}/stream-info`);
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`/api/${currentChannel}/stream-info`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) throw new Error('Failed to load stream info');
+
         const data = await response.json();
 
-        document.getElementById('streamStatus').textContent = data.isLive ?
-            `Live since ${new Date(data.startedAt).toLocaleString()}` : 'Offline';
-        document.getElementById('streamStatus').className = data.isLive ?
-            'stream-info-value status-live' : 'stream-info-value';
+        const statusElement = document.getElementById('streamStatus');
+        const titleElement = document.getElementById('streamTitle');
+        const categoryElement = document.getElementById('streamCategory');
+        const startedElement = document.getElementById('streamStarted');
 
-        document.getElementById('streamTitle').textContent = data.title || 'No title set';
-        document.getElementById('streamCategory').textContent = data.category || 'No category set';
+        if (data.isLive) {
+            statusElement.innerHTML = '<i class="fas fa-circle status-icon status-pulse"></i> Live';
+            statusElement.className = 'info-value status-online';
+            startedElement.textContent = new Date(data.startedAt).toLocaleString();
+        } else {
+            statusElement.innerHTML = '<i class="fas fa-circle status-icon"></i> Offline';
+            statusElement.className = 'info-value status-offline';
+            startedElement.textContent = '-';
+        }
+
+        titleElement.textContent = data.title || 'No title set';
+        categoryElement.textContent = data.category || 'No category set';
 
         // Set values in form
         document.getElementById('streamTitleInput').value = data.title || '';
@@ -108,18 +152,23 @@ async function loadStreamInfo() {
 }
 
 function setupNavigation() {
-    const navLinks = document.querySelectorAll('.side-nav a');
+    const navLinks = document.querySelectorAll('.nav-item[data-section]');
+    const sections = document.querySelectorAll('.section-content');
 
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
 
-            // Update active state
+            // Update active nav item
             navLinks.forEach(l => l.classList.remove('active'));
             link.classList.add('active');
 
             // Show section
-            showSection(link.getAttribute('href').substring(1));
+            const sectionId = link.getAttribute('data-section');
+            showSection(sectionId);
+
+            // Update page title
+            document.getElementById('pageTitle').textContent = link.querySelector('span').textContent;
         });
     });
 }
@@ -127,206 +176,177 @@ function setupNavigation() {
 function showSection(sectionId) {
     // Hide all sections
     document.querySelectorAll('.section-content').forEach(section => {
-        section.style.display = 'none';
+        section.classList.remove('active');
     });
 
     // Show requested section
     const section = document.getElementById(sectionId);
     if (section) {
-        section.style.display = 'block';
+        section.classList.add('active');
+
+        // Special handling for certain sections
+        if (sectionId === 'mod-stats') {
+            loadModStats();
+        }
     }
 }
 
 function setupActionHandlers() {
-    document.getElementById('banUser').addEventListener('click', async () => {
-        const username = document.getElementById('banUsername').value.trim();
-        const reason = document.getElementById('banReason').value.trim();
+    // Ban User
+    document.getElementById('banUser').addEventListener('click', handleBanUser);
 
-        if (!username) {
-            showResult('banResult', 'Please enter a username', 'error');
-            return;
-        }
+    // Timeout User
+    document.getElementById('timeoutUser').addEventListener('click', handleTimeoutUser);
 
-        try {
-            const userId = await getUserId(username);
-            if (!userId) {
-                showResult('banResult', `User "${username}" not found`, 'error');
-                return;
+    // Mod Management
+    document.getElementById('modUser').addEventListener('click', () => handleModAction('mod'));
+    document.getElementById('unmodUser').addEventListener('click', () => handleModAction('unmod'));
+
+    // VIP Management
+    document.getElementById('addVip').addEventListener('click', () => handleModAction('vip'));
+    document.getElementById('removeVip').addEventListener('click', () => handleModAction('unvip'));
+
+    // Commercials
+    document.getElementById('runCommercial').addEventListener('click', handleCommercial);
+
+    // Stream Info Update
+    document.getElementById('updateStreamInfo').addEventListener('click', handleStreamInfoUpdate);
+
+    // Category Search
+    document.getElementById('streamCategoryInput').addEventListener('input', handleCategorySearch);
+
+    // Back to Hub
+    document.getElementById('backToHubBtn').addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.href = '/hub';
+    });
+
+    // Logout
+    document.getElementById('channelLogout').addEventListener('click', (e) => {
+        e.preventDefault();
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('channelName');
+        window.location.href = '/login';
+    });
+}
+
+async function handleBanUser() {
+    const username = document.getElementById('banUsername').value.trim();
+    const reason = document.getElementById('banReason').value.trim();
+    const resultElement = document.getElementById('banResult');
+
+    if (!username) {
+        showResult(resultElement, 'Please enter a username', 'error');
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('authToken');
+
+        // Get user ID
+        const userIdResponse = await fetch(`/api/${currentChannel}/user-id?username=${encodeURIComponent(username)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
             }
+        });
 
-            const response = await fetch(`/api/${currentChannel}/ban`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId,
-                    reason: reason || ' '
-                })
-            });
+        if (!userIdResponse.ok) {
+            throw new Error('User not found');
+        }
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Ban failed');
+        const { userId } = await userIdResponse.json();
+
+        // Ban user
+        const banResponse = await fetch(`/api/${currentChannel}/ban`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId,
+                reason: reason || 'Banned via Stream Manager'
+            })
+        });
+
+        if (!banResponse.ok) {
+            const errorData = await banResponse.json();
+            throw new Error(errorData.error || 'Ban failed');
+        }
+
+        showResult(resultElement, `${username} has been banned`, 'success');
+        document.getElementById('banUsername').value = '';
+        document.getElementById('banReason').value = '';
+
+        // Refresh mod stats
+        loadModStats();
+    } catch (error) {
+        console.error('Ban error:', error);
+        showResult(resultElement, `Ban failed: ${error.message}`, 'error');
+    }
+}
+
+async function handleTimeoutUser() {
+    const username = document.getElementById('timeoutUsername').value.trim();
+    const duration = document.getElementById('timeoutDuration').value;
+    const reason = document.getElementById('timeoutReason').value.trim();
+    const resultElement = document.getElementById('timeoutResult');
+
+    if (!username) {
+        showResult(resultElement, 'Please enter a username', 'error');
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('authToken');
+
+        // Get user ID
+        const userIdResponse = await fetch(`/api/${currentChannel}/user-id?username=${encodeURIComponent(username)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
             }
+        });
 
-            showResult('banResult', `${username} has been banned`, 'success');
-            document.getElementById('banUsername').value = '';
-            document.getElementById('banReason').value = '';
-        } catch (error) {
-            console.error('Ban error:', error);
-            showResult('banResult', `Ban failed: ${error.message}`, 'error');
-        }
-    });
-    document.getElementById('unbanUser')?.addEventListener('click', async () => {
-        const username = document.getElementById('unbanUsername').value.trim();
-
-        if (!username) {
-            showResult('unbanResult', 'Please enter a username', 'error');
-            return;
+        if (!userIdResponse.ok) {
+            throw new Error('User not found');
         }
 
-        try {
-            const userId = await getUserId(username);
-            if (!userId) {
-                showResult('unbanResult', `User "${username}" not found`, 'error');
-                return;
-            }
+        const { userId } = await userIdResponse.json();
 
-            const response = await fetch(`/api/${currentChannel}/unban`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
-            });
+        // Timeout user
+        const timeoutResponse = await fetch(`/api/${currentChannel}/timeout`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId,
+                duration,
+                reason: reason || 'Timed out via Stream Manager'
+            })
+        });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Unban failed');
-            }
-
-            showResult('unbanResult', `${username} has been unbanned`, 'success');
-            document.getElementById('unbanUsername').value = '';
-        } catch (error) {
-            console.error('Unban error:', error);
-            showResult('unbanResult', `Unban failed: ${error.message}`, 'error');
-        }
-    });
-    // Timeout user
-    document.getElementById('timeoutUser').addEventListener('click', async () => {
-        const username = document.getElementById('timeoutUsername').value.trim();
-        const duration = document.getElementById('timeoutDuration').value;
-        const reason = document.getElementById('timeoutReason').value.trim();
-
-        if (!username) {
-            showResult('timeoutResult', 'Please enter a username', 'error');
-            return;
+        if (!timeoutResponse.ok) {
+            const errorData = await timeoutResponse.json();
+            throw new Error(errorData.error || 'Timeout failed');
         }
 
-        try {
-            const userId = await getUserId(username);
-            if (!userId) {
-                showResult('timeoutResult', `User "${username}" not found`, 'error');
-                return;
-            }
+        const durationText = duration >= 86400 ?
+            `${Math.round(duration / 86400)} days` :
+            `${Math.round(duration / 60)} minutes`;
 
-            const response = await fetch(`/api/${currentChannel}/timeout`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId,
-                    duration,
-                    reason: reason || 'Timed out via Stream Manager'
-                })
-            });
+        showResult(resultElement, `${username} timed out for ${durationText}`, 'success');
+        document.getElementById('timeoutUsername').value = '';
+        document.getElementById('timeoutReason').value = '';
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Timeout failed');
-            }
-
-            showResult('timeoutResult', `${username} has been timed out for ${duration / 60} minutes`, 'success');
-            document.getElementById('timeoutUsername').value = '';
-            document.getElementById('timeoutReason').value = '';
-        } catch (error) {
-            console.error('Timeout error:', error);
-            showResult('timeoutResult', `Timeout failed: ${error.message}`, 'error');
-        }
-    });
-
-    // Run commercial
-    document.getElementById('runCommercial').addEventListener('click', async () => {
-        const length = document.getElementById('commercialLength').value;
-
-        try {
-            const response = await fetch(`/api/${currentChannel}/commercial`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ length })
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                showResult('commercialResult', `Commercial started for ${length} seconds`, 'success');
-            } else {
-                showResult('commercialResult', `Commercial failed: ${result.error || 'Unknown error'}`, 'error');
-            }
-        } catch (error) {
-            console.error('Commercial error:', error);
-            showResult('commercialResult', 'Commercial failed - check console', 'error');
-        }
-    });
-
-    // Add/remove mod
-    document.getElementById('modUser').addEventListener('click', async () => {
-        await handleModAction('mod');
-    });
-
-    document.getElementById('unmodUser').addEventListener('click', async () => {
-        await handleModAction('unmod');
-    });
-
-    // Add/remove VIP
-    document.getElementById('addVip').addEventListener('click', async () => {
-        await handleModAction('vip');
-    });
-
-    document.getElementById('removeVip').addEventListener('click', async () => {
-        await handleModAction('unvip');
-    });
-
-    // Update stream info
-    document.getElementById('updateStreamInfo').addEventListener('click', async () => {
-        const title = document.getElementById('streamTitleInput').value.trim();
-        const category = document.getElementById('streamCategoryInput').value.trim();
-
-        if (!title) {
-            showResult('streamUpdateResult', 'Please enter a title', 'error');
-            return;
-        }
-
-        try {
-            // In a real app, you'd look up the game ID from the category name
-            const response = await fetch(`/api/${currentChannel}/stream-info`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title,
-                    gameId: '' // You'd need to implement game ID lookup
-                })
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                showResult('streamUpdateResult', 'Stream info updated successfully', 'success');
-                await loadStreamInfo(); // Refresh displayed info
-            } else {
-                showResult('streamUpdateResult', `Update failed: ${result.error || 'Unknown error'}`, 'error');
-            }
-        } catch (error) {
-            console.error('Update error:', error);
-            showResult('streamUpdateResult', 'Update failed - check console', 'error');
-        }
-    });
+        // Refresh mod stats
+        loadModStats();
+    } catch (error) {
+        console.error('Timeout error:', error);
+        showResult(resultElement, `Timeout failed: ${error.message}`, 'error');
+    }
 }
 
 async function handleModAction(action) {
@@ -335,26 +355,38 @@ async function handleModAction(action) {
     const resultElement = document.getElementById(`${action === 'vip' || action === 'unvip' ? 'vip' : 'mod'}Result`);
 
     if (!username) {
-        showResult(resultElement.id, 'Please enter a username', 'error');
+        showResult(resultElement, 'Please enter a username', 'error');
         return;
     }
 
     try {
-        // First get user ID
-        const userId = await getUserId(username);
-        if (!userId) {
-            showResult(resultElement.id, `User "${username}" not found`, 'error');
-            return;
+        const token = localStorage.getItem('authToken');
+
+        // Get user ID
+        const userIdResponse = await fetch(`/api/${currentChannel}/user-id?username=${encodeURIComponent(username)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!userIdResponse.ok) {
+            throw new Error('User not found');
         }
 
-        const response = await fetch(`/api/${currentChannel}/${action}`, {
+        const { userId } = await userIdResponse.json();
+
+        // Perform action
+        const actionResponse = await fetch(`/api/${currentChannel}/${action}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ userId })
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
+        if (!actionResponse.ok) {
+            const errorData = await actionResponse.json();
             throw new Error(errorData.error || 'Action failed');
         }
 
@@ -365,49 +397,208 @@ async function handleModAction(action) {
             'unvip': 'removed as VIP'
         }[action];
 
-        showResult(resultElement.id, `${username} has been ${actionText}`, 'success');
+        showResult(resultElement, `${username} has been ${actionText}`, 'success');
         usernameElement.value = '';
+
+        // Refresh mod stats if relevant
+        if (action === 'mod' || action === 'unmod') {
+            loadModStats();
+        }
     } catch (error) {
         console.error(`${action} error:`, error);
-        showResult(resultElement.id, `${actionText || 'Action'} failed: ${error.message}`, 'error');
+        showResult(resultElement, `${actionText || 'Action'} failed: ${error.message}`, 'error');
     }
-
-    await loadModStats();
 }
 
-async function getUserId(username) {
-    try {
-        // Encode the username for URL safety
-        const encodedUsername = encodeURIComponent(username);
-        const response = await fetch(`/api/${currentChannel}/user-id?username=${encodedUsername}`);
+async function handleCommercial() {
+    const length = document.getElementById('commercialLength').value;
+    const resultElement = document.getElementById('commercialResult');
 
-        if (!response.ok) {
-            throw new Error(await response.text());
+    try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`/api/${currentChannel}/commercial`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ length })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showResult(resultElement, `Commercial started for ${length} seconds`, 'success');
+
+            // Add to commercial history UI
+            addCommercialToHistory(length);
+        } else {
+            showResult(resultElement, `Commercial failed: ${result.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Commercial error:', error);
+        showResult(resultElement, 'Commercial failed - check console', 'error');
+    }
+}
+
+function addCommercialToHistory(length) {
+    const historyContainer = document.querySelector('.commercial-history');
+    const now = new Date();
+
+    const historyItem = document.createElement('div');
+    historyItem.className = 'history-item';
+
+    const timeElement = document.createElement('div');
+    timeElement.className = 'history-time';
+    timeElement.textContent = 'Just now';
+
+    const durationElement = document.createElement('div');
+    durationElement.className = 'history-duration';
+    durationElement.textContent = `${length} seconds`;
+
+    historyItem.appendChild(timeElement);
+    historyItem.appendChild(durationElement);
+
+    // Insert at the top
+    if (historyContainer.firstChild) {
+        historyContainer.insertBefore(historyItem, historyContainer.firstChild);
+    } else {
+        historyContainer.appendChild(historyItem);
+    }
+
+    // Update timers periodically
+    const updateTime = () => {
+        const seconds = Math.floor((new Date() - now) / 1000);
+        let displayText;
+
+        if (seconds < 60) {
+            displayText = `${seconds} seconds ago`;
+        } else if (seconds < 3600) {
+            displayText = `${Math.floor(seconds / 60)} minutes ago`;
+        } else {
+            displayText = `${Math.floor(seconds / 3600)} hours ago`;
         }
 
-        const data = await response.json();
-        return data.userId;
+        timeElement.textContent = displayText;
+    };
+
+    updateTime();
+    const timer = setInterval(updateTime, 60000);
+
+    // Clean up timer when element is removed
+    historyItem.addEventListener('DOMNodeRemoved', () => {
+        clearInterval(timer);
+    });
+}
+
+async function handleStreamInfoUpdate() {
+    const title = document.getElementById('streamTitleInput').value.trim();
+    const category = document.getElementById('streamCategoryInput').value.trim();
+    const resultElement = document.getElementById('streamUpdateResult');
+
+    if (!title) {
+        showResult(resultElement, 'Please enter a title', 'error');
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`/api/${currentChannel}/stream-info`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                title,
+                gameId: '' // You'd need to implement game ID lookup
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showResult(resultElement, 'Stream info updated successfully', 'success');
+            await loadStreamInfo(); // Refresh displayed info
+        } else {
+            showResult(resultElement, `Update failed: ${result.error || 'Unknown error'}`, 'error');
+        }
     } catch (error) {
-        console.error('User lookup error:', error);
-        showResult('banResult', `Failed to find user: ${error.message}`, 'error');
-        return null;
+        console.error('Update error:', error);
+        showResult(resultElement, 'Update failed - check console', 'error');
     }
 }
 
+async function handleCategorySearch() {
+    const query = document.getElementById('streamCategoryInput').value.trim();
+    const resultsContainer = document.getElementById('categoryResults');
+
+    if (query.length < 3) {
+        resultsContainer.classList.remove('show');
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`https://api.twitch.tv/helix/search/categories?query=${encodeURIComponent(query)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID
+            }
+        });
+
+        if (!response.ok) throw new Error('Search failed');
+
+        const data = await response.json();
+        resultsContainer.innerHTML = '';
+
+        if (data.data && data.data.length > 0) {
+            data.data.forEach(category => {
+                const div = document.createElement('div');
+                div.textContent = category.name;
+                div.addEventListener('click', () => {
+                    document.getElementById('streamCategoryInput').value = category.name;
+                    resultsContainer.classList.remove('show');
+                });
+                resultsContainer.appendChild(div);
+            });
+            resultsContainer.classList.add('show');
+        } else {
+            resultsContainer.classList.remove('show');
+        }
+    } catch (error) {
+        console.error('Category search error:', error);
+        resultsContainer.classList.remove('show');
+    }
+}
 
 async function loadModStats() {
     try {
         const timeframe = document.getElementById('statsTimeframe').value;
-        const response = await fetch(`/api/${currentChannel}/mod-stats?days=${timeframe}`);
-        const stats = await response.json();
+        const token = localStorage.getItem('authToken');
 
-        // Update table
+        const response = await fetch(`/api/${currentChannel}/mod-stats?days=${timeframe}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) throw new Error('Failed to load mod stats');
+
+        const stats = await response.json();
         const tbody = document.getElementById('modStatsBody');
         tbody.innerHTML = '';
 
+        if (stats.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="5" class="text-center">No moderation data available</td>`;
+            tbody.appendChild(row);
+            return;
+        }
+
         stats.forEach((mod, index) => {
             const row = document.createElement('tr');
-            const actionsPerDay = (timeframe > 0 ? (mod.totalActions / timeframe).toFixed(2) : '-');
+            const actionsPerDay = timeframe > 0 ? (mod.totalActions / timeframe).toFixed(2) : '-';
 
             row.innerHTML = `
                 <td>${mod.moderatorName}</td>
@@ -417,7 +608,6 @@ async function loadModStats() {
                 <td>${actionsPerDay}</td>
             `;
 
-            // Highlight top mod
             if (index === 0) {
                 row.classList.add('top-mod');
             }
@@ -425,16 +615,17 @@ async function loadModStats() {
             tbody.appendChild(row);
         });
 
-        // Update chart
         updateModStatsChart(stats);
     } catch (error) {
         console.error('Failed to load mod stats:', error);
+        const tbody = document.getElementById('modStatsBody');
+        tbody.innerHTML = `<tr><td colspan="5">Error loading stats: ${error.message}</td></tr>`;
     }
 }
 
 function updateModStatsChart(stats) {
     const ctx = document.getElementById('modStatsChart').getContext('2d');
-    const topMods = stats.slice(0, 5); // Show top 5 mods
+    const topMods = stats.slice(0, 5);
 
     if (modStatsChart) {
         modStatsChart.destroy();
@@ -467,11 +658,11 @@ function updateModStatsChart(stats) {
                 title: {
                     display: true,
                     text: 'Top Moderators',
-                    color: 'var(--text-light)'
+                    color: 'var(--text-primary)'
                 },
                 legend: {
                     labels: {
-                        color: 'var(--text-light)'
+                        color: 'var(--text-primary)'
                     }
                 }
             },
@@ -479,19 +670,19 @@ function updateModStatsChart(stats) {
                 x: {
                     stacked: true,
                     ticks: {
-                        color: 'var(--text-light)'
+                        color: 'var(--text-primary)'
                     },
                     grid: {
-                        color: 'var(--medium-gray)'
+                        color: 'var(--border-color)'
                     }
                 },
                 y: {
                     stacked: true,
                     ticks: {
-                        color: 'var(--text-light)'
+                        color: 'var(--text-primary)'
                     },
                     grid: {
-                        color: 'var(--medium-gray)'
+                        color: 'var(--border-color)'
                     }
                 }
             }
@@ -515,3 +706,10 @@ function showResult(elementId, message, type) {
 
 // Auto-refresh token status every minute
 setInterval(updateConnectionStatus, 60000);
+
+// Close search results when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-combo')) {
+        document.getElementById('categoryResults').classList.remove('show');
+    }
+});

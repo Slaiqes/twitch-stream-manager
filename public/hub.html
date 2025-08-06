@@ -1,28 +1,92 @@
 <!DOCTYPE html>
-<link rel="icon" href="/images/twitch-logo.png" type="image/png">
-
 <html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Channel Hub</title>
+    <title>Channel Hub - Stream Manager</title>
+    <link rel="icon" href="/images/twitch-logo.png" type="image/png">
     <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
-<body class="hub-page">
-    <header class="app-header">
-        <div class="container">
-            <h1>Channel Hub</h1>
-            <button id="connectChannel" class="btn btn-primary">Connect New Channel</button>
-        </div>
-    </header>
+<body class="dashboard-page">
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <img src="/images/twitch-logo.png" alt="Twitch" class="sidebar-logo">
+                <h2>Stream Manager</h2>
+            </div>
 
-    <main class="container">
-        <div class="channel-grid" id="channelList">
-            <!-- Channels will be loaded here -->
-        </div>
-    </main>
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <h3 class="nav-title">MAIN</h3>
+                    <a href="/hub" class="nav-item active">
+                        <i class="fas fa-th-large"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <h3 class="nav-title">MANAGEMENT</h3>
+                    <div class="nav-item">
+                        <i class="fas fa-users"></i>
+                        <span>Connected Channels</span>
+                        <span class="badge" id="channelCount">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <h3 class="nav-title">ACCOUNT</h3>
+                    <a href="#" class="nav-item" id="logoutBtn">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="main-header">
+                <div class="header-left">
+                    <h1>Channel Hub</h1>
+                    <nav class="breadcrumb">
+                        <a href="/hub">Dashboard</a>
+                        <span>/</span>
+                        <span>Connected Channels</span>
+                    </nav>
+                </div>
+
+                <div class="header-right">
+                    <button id="connectChannel" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Connect Channel
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-section">
+                <div class="section-header">
+                    <h2>Connected Channels</h2>
+                    <div class="section-actions">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" placeholder="Search channels...">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-grid" id="channelList">
+                    <!-- Channels will be loaded here -->
+                    <div class="card-skeleton"></div>
+                    <div class="card-skeleton"></div>
+                    <div class="card-skeleton"></div>
+                </div>
+            </div>
+        </main>
+    </div>
 
     <script src="/js/dashboard.js"></script>
 </body>
