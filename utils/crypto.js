@@ -23,12 +23,16 @@ async function getKey() {
 module.exports = {
     encrypt: async (text) => {
         try {
+            if (!text) throw new Error('No text provided for encryption');
+
             const key = await getKey();
             const iv = await randomBytes(16);
             const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+
             let encrypted = cipher.update(text, 'utf8', 'hex');
             encrypted += cipher.final('hex');
             const authTag = cipher.getAuthTag().toString('hex');
+
             return `${iv.toString('hex')}:${authTag}:${encrypted}`;
         } catch (err) {
             console.error('Encryption failed:', err.message);
@@ -36,16 +40,32 @@ module.exports = {
         }
     },
 
-    decrypt: async (text) => {
+    decrypt: async (encryptedText) => {
         try {
+            if (!encryptedText) throw new Error('No encrypted text provided');
+
+            // Handle the case where the text might start with 'enc:' (from TokenManager)
+            const textToDecrypt = encryptedText.startsWith('enc:')
+                ? encryptedText.substring(4)
+                : encryptedText;
+
             const key = await getKey();
-            const [ivHex, authTagHex, encrypted] = text.split(':');
+            const parts = textToDecrypt.split(':');
+
+            if (parts.length !== 3) {
+                throw new Error('Invalid encrypted text format');
+            }
+
+            const [ivHex, authTagHex, encrypted] = parts;
             const iv = Buffer.from(ivHex, 'hex');
             const authTag = Buffer.from(authTagHex, 'hex');
+
             const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
             decipher.setAuthTag(authTag);
+
             let decrypted = decipher.update(encrypted, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
+
             return decrypted;
         } catch (err) {
             console.error('Decryption failed:', err.message);

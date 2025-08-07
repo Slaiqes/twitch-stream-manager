@@ -2,22 +2,49 @@
 document.addEventListener('DOMContentLoaded', () => {
     const token = localStorage.getItem('authToken');
     const path = window.location.pathname;
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // Handle token from URL (OAuth redirect)
+    if (urlParams.has('token')) {
+        const urlToken = urlParams.get('token');
+        try {
+            // Verify the token is valid
+            const decoded = jwt_decode(urlToken);
+            localStorage.setItem('authToken', urlToken);
+            localStorage.setItem('userRole', decoded.role);
+
+            if (decoded.channel) {
+                localStorage.setItem('channelName', decoded.channel);
+            }
+
+            // Remove token from URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (err) {
+            console.error('Invalid token in URL:', err);
+        }
+    }
 
     // If no token and not on login page, redirect to login
     if (!token && !path.includes('login')) {
-        window.location.href = '/login';
+        window.location.href = '/login.html';
         return;
     }
 
     // If token exists and on login page, redirect based on role
     if (token && path.includes('login')) {
         const role = localStorage.getItem('userRole');
-        window.location.href = role === 'admin' ? '/hub' : `/c/${localStorage.getItem('channelName')}`;
+        window.location.href = role === 'admin' ? '/hub.html' : `/c/${localStorage.getItem('channelName')}.html`;
     }
 
     // Initialize hub if on hub page
     if (path.includes('hub')) {
         initializeHub();
+    }
+
+    // Show success message if redirected after connection
+    if (urlParams.get('connect_success') === 'true') {
+        alert('Channel connected successfully!');
+        window.history.replaceState({}, document.title, window.location.pathname);
     }
 });
 
@@ -38,7 +65,7 @@ document.getElementById('adminLoginForm')?.addEventListener('submit', async (e) 
         const data = await response.json();
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('userRole', 'admin');
-        window.location.href = '/hub';
+        window.location.href = '/hub.html';
     } else {
         alert('Admin login failed!');
     }
@@ -68,7 +95,7 @@ function initializeHub() {
 
     // Verify admin role
     if (role !== 'admin') {
-        window.location.href = '/login';
+        window.location.href = '/login.html';
         return;
     }
 
@@ -84,7 +111,7 @@ function initializeHub() {
     document.getElementById('logoutBtn')?.addEventListener('click', () => {
         localStorage.removeItem('authToken');
         localStorage.removeItem('userRole');
-        window.location.href = '/login';
+        window.location.href = '/login.html';
     });
 
     // Set up search functionality
@@ -107,12 +134,13 @@ async function loadChannels() {
         const token = localStorage.getItem('authToken');
         const response = await fetch('/api/channels', {
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
 
         if (response.status === 401) {
-            window.location.href = '/login';
+            window.location.href = '/login.html';
             return;
         }
 
@@ -155,7 +183,7 @@ async function loadChannels() {
                         <span>${channel.broadcaster_type || 'Streamer'}</span>
                         <span>Connected ${new Date(channel.connectedAt).toLocaleDateString()}</span>
                     </p>
-                    <a href="/c/${channel.login}" class="btn btn-primary btn-block">
+                    <a href="/c/${channel.login}.html" class="btn btn-primary btn-block">
                         <i class="fas fa-cog"></i> Manage Channel
                     </a>
                 </div>

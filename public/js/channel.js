@@ -6,16 +6,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check authentication
     const token = localStorage.getItem('authToken');
     if (!token) {
-        window.location.href = '/login';
+        window.location.href = '/login.html';
         return;
     }
 
     // Get channel from URL
     const pathParts = window.location.pathname.split('/').filter(part => part);
     if (pathParts[0] === 'c' && pathParts[1]) {
-        currentChannel = pathParts[1];
+        // Remove .html extension if present
+        currentChannel = pathParts[1].replace('.html', '');
     } else {
-        window.location.href = '/login';
+        window.location.href = '/login.html';
         return;
     }
 
@@ -24,7 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const userChannel = localStorage.getItem('channelName');
 
     if (userRole !== 'admin' && userChannel !== currentChannel) {
-        window.location.href = '/login';
+        window.location.href = '/login.html';
         return;
     }
 
@@ -32,7 +33,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (userRole !== 'admin') {
         document.getElementById('backToHubBtn').style.display = 'none';
     }
-
+    // Update the back to hub button handler
+    document.getElementById('backToHubBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.href = '/hub.html';
+    });
     // Initialize
     await loadChannelData();
     setupNavigation();
@@ -222,12 +227,12 @@ function setupActionHandlers() {
     });
 
     // Logout
-    document.getElementById('channelLogout').addEventListener('click', (e) => {
+    document.getElementById('channelLogout')?.addEventListener('click', (e) => {
         e.preventDefault();
         localStorage.removeItem('authToken');
         localStorage.removeItem('userRole');
         localStorage.removeItem('channelName');
-        window.location.href = '/login';
+        window.location.href = '/login.html';
     });
 }
 

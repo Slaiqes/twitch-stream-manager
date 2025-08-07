@@ -4,7 +4,6 @@ const axios = require('axios');
 const path = require('path');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const Token = require('./models/Token');
 const TokenManager = require('./tokenManager');
 const ModAction = require('./models/modAction');
@@ -45,7 +44,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Authentication Middleware
 function authenticate(req, res, next) {
-    const token = req.headers.authorization?.split(' ')[1] || req.cookies?.token;
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(401).json({ error: 'Authentication required' });
@@ -72,7 +72,7 @@ function checkChannelAccess(req, res, next) {
 
 // Routes
 app.get('/', (req, res) => {
-    res.redirect('/login');
+    res.redirect('/login.html');
 });
 
 // Admin Login
@@ -99,7 +99,6 @@ app.post('/api/admin/login', (req, res) => {
 
 // Twitch OAuth Routes
 app.get('/auth/twitch', (req, res) => {
-    // Determine if this is an admin connecting a channel or streamer login
     const isAdminConnecting = req.headers.referer?.includes('/hub');
     const state = isAdminConnecting ? 'admin_connect' : 'streamer_login';
 
@@ -128,7 +127,7 @@ app.get('/auth/twitch/callback', async (req, res) => {
     try {
         const { code, state } = req.query;
 
-        // 1. Exchange code for tokens
+        // Exchange code for tokens
         const tokenResponse = await axios.post('https://id.twitch.tv/oauth2/token', null, {
             params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
@@ -140,7 +139,7 @@ app.get('/auth/twitch/callback', async (req, res) => {
             timeout: 5000
         });
 
-        // 2. Get channel info
+        // Get channel info
         const userResponse = await axios.get('https://api.twitch.tv/helix/users', {
             headers: {
                 'Authorization': `Bearer ${tokenResponse.data.access_token}`,
@@ -155,13 +154,23 @@ app.get('/auth/twitch/callback', async (req, res) => {
 
         const channelInfo = userResponse.data.data[0];
 
-        // 3. Handle based on state
         if (state === 'admin_connect') {
             // ADMIN CONNECTING A CHANNEL
             const tokenManager = new TokenManager(channelInfo.login);
-            await tokenManager.saveTokens(tokenResponse.data, channelInfo);
+            const saveResult = await tokenManager.saveTokens(tokenResponse.data, channelInfo);
 
-            return res.redirect('/hub');
+            if (!saveResult.success) {
+                throw new Error('Failed to save tokens');
+            }
+
+            // Redirect to hub with token in URL for the frontend to handle
+            const adminToken = jwt.sign(
+                { role: 'admin' },
+                process.env.JWT_SECRET,
+                { expiresIn: '8h' }
+            );
+
+            return res.redirect(`/hub.html?token=${adminToken}&connect_success=true`);
         } else {
             // STREAMER LOGIN
             const token = jwt.sign(
@@ -173,12 +182,11 @@ app.get('/auth/twitch/callback', async (req, res) => {
                 { expiresIn: '8h' }
             );
 
-            // Use a login-success page to set tokens securely
             return res.redirect(`/login-success?token=${token}&channel=${channelInfo.login}`);
         }
     } catch (error) {
         console.error('OAuth callback error:', error);
-        res.redirect('/login?error=oauth_failed');
+        res.redirect('/login.html?error=oauth_failed');
     }
 });
 
@@ -191,7 +199,7 @@ app.get('/login-success', (req, res) => {
                     localStorage.setItem('authToken', '${req.query.token}');
                     localStorage.setItem('userRole', 'streamer');
                     localStorage.setItem('channelName', '${req.query.channel}');
-                    window.location.href = '/c/${req.query.channel}';
+                    window.location.href = '/c/${req.query.channel}.html';
                 </script>
             </body>
         </html>
@@ -201,7 +209,6 @@ app.get('/login-success', (req, res) => {
 // Channel List
 app.get('/api/channels', authenticate, async (req, res) => {
     try {
-        // Only admins can list all channels
         if (req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied' });
         }
@@ -504,21 +511,44 @@ app.get('/api/:channel/user-id', authenticate, checkChannelAccess, async (req, r
 });
 
 // Static File Routes
-app.get('/login', (req, res) => {
+app.get('/login.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/login.html'));
 });
 
-app.get('/hub', authenticate, (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.redirect('/login');
+app.get('/hub.html', (req, res) => {
+    // Check for token in query string (for OAuth redirect)
+    const token = req.query.token;
+    if (token) {
+        try {
+            jwt.verify(token, process.env.JWT_SECRET);
+            return res.sendFile(path.join(__dirname, 'public/hub.html'));
+        } catch (err) {
+            return res.redirect('/login.html');
+        }
     }
-    res.sendFile(path.join(__dirname, 'public/hub.html'));
+
+    // Normal authentication check
+    const authHeader = req.headers.authorization;
+    const authToken = authHeader && authHeader.split(' ')[1];
+
+    if (!authToken) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    try {
+        const decoded = jwt.verify(authToken, process.env.JWT_SECRET);
+        if (decoded.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        res.sendFile(path.join(__dirname, 'public/hub.html'));
+    } catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
 });
 
-app.get('/c/:channel', authenticate, (req, res) => {
-    // Check if user has access to this channel
+app.get('/c/:channel.html', authenticate, (req, res) => {
     if (req.user.role !== 'admin' && req.user.channel !== req.params.channel) {
-        return res.redirect('/login');
+        return res.status(403).json({ error: 'Access denied' });
     }
     res.sendFile(path.join(__dirname, 'public/channel.html'));
 });

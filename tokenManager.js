@@ -10,14 +10,14 @@ class TokenManager {
 
     async getTokens() {
         try {
-            const token = await Token.findOne({ channelName: this.channelName });
+            const token = await Token.findOne({ channelName: this.channelName }).select('+accessToken +refreshToken');
             if (!token) return null;
 
             // Decrypt tokens before returning
             return {
                 ...token.toObject(),
-                accessToken: decrypt(token.accessToken),
-                refreshToken: decrypt(token.refreshToken)
+                accessToken: decrypt(token.accessToken.substring(4)), // Remove 'enc:' prefix
+                refreshToken: decrypt(token.refreshToken.substring(4))
             };
         } catch (error) {
             console.error(`Error fetching tokens for ${this.channelName}:`, error);
@@ -34,8 +34,8 @@ class TokenManager {
 
             const tokenData = {
                 channelName: this.channelName,
-                accessToken: encrypt(tokens.access_token),
-                refreshToken: encrypt(tokens.refresh_token),
+                accessToken: 'enc:' + await encrypt(tokens.access_token),
+                refreshToken: 'enc:' + await encrypt(tokens.refresh_token),
                 expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)),
                 scope: tokens.scope || [],
                 tokenType: tokens.token_type || 'bearer',
@@ -52,29 +52,16 @@ class TokenManager {
                 setDefaultsOnInsert: true
             };
 
-            const savedToken = await Token.findOneAndUpdate(
+            await Token.findOneAndUpdate(
                 { channelName: this.channelName },
                 tokenData,
                 options
             );
 
-            // Generate a JWT for the streamer if this is not an admin action
-            if (!this.isAdminAction()) {
-                const userToken = jwt.sign(
-                    {
-                        role: 'streamer',
-                        channel: this.channelName
-                    },
-                    process.env.JWT_SECRET,
-                    { expiresIn: '8h' }
-                );
-                return { saved: true, userToken };
-            }
-
-            return { saved: true };
+            return { success: true };
         } catch (error) {
             console.error(`Failed to save tokens for ${this.channelName}:`, error.message);
-            return { saved: false, error: error.message };
+            return { success: false, error: error.message };
         }
     }
 
@@ -93,11 +80,11 @@ class TokenManager {
                     grant_type: 'refresh_token',
                     refresh_token: token.refreshToken
                 },
-                timeout: 5000 // Add timeout for security
+                timeout: 5000
             });
 
             const saveResult = await this.saveTokens(response.data, token.channelData);
-            return saveResult.saved;
+            return saveResult.success;
         } catch (error) {
             console.error(`Token refresh failed for ${this.channelName}:`, {
                 message: error.message,
@@ -172,12 +159,6 @@ class TokenManager {
             console.error(`Error updating channel data for ${this.channelName}:`, error);
             return false;
         }
-    }
-
-    isAdminAction() {
-        // Implement logic to check if this is an admin-initiated action
-        // This could check the call stack or use a context parameter
-        return false; // Default to false for safety
     }
 }
 
