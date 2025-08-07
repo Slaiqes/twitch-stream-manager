@@ -1,4 +1,3 @@
-// Check authentication on page load
 document.addEventListener('DOMContentLoaded', () => {
     const token = localStorage.getItem('authToken');
     const path = window.location.pathname;

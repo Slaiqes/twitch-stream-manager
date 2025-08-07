@@ -55,9 +55,15 @@ async function loadChannelData() {
         // Load channel info
         const response = await fetch(`/api/channels`, {
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
+
+        if (response.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
 
         if (!response.ok) throw new Error('Failed to load channels');
 
@@ -80,7 +86,7 @@ async function loadChannelData() {
     } catch (error) {
         console.error('Failed to load channel data:', error);
         alert('Failed to load channel data');
-        window.location.href = '/hub';
+        window.location.href = '/hub.html';
     }
 }
 

@@ -32,6 +32,17 @@ class TokenManager {
                 throw new Error('Invalid tokens provided');
             }
 
+            // Prepare channel data
+            const channelInfo = {
+                id: channelData.id,
+                login: channelData.login,
+                display_name: channelData.display_name,
+                profile_image_url: channelData.profile_image_url,
+                broadcaster_type: channelData.broadcaster_type,
+                connectedAt: new Date(),
+                status: 'connected'
+            };
+
             const tokenData = {
                 channelName: this.channelName,
                 accessToken: 'enc:' + await encrypt(tokens.access_token),
@@ -39,11 +50,7 @@ class TokenManager {
                 expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)),
                 scope: tokens.scope || [],
                 tokenType: tokens.token_type || 'bearer',
-                channelData: {
-                    ...channelData,
-                    connectedAt: new Date(),
-                    status: 'connected'
-                }
+                channelData: channelInfo
             };
 
             const options = {
@@ -52,15 +59,16 @@ class TokenManager {
                 setDefaultsOnInsert: true
             };
 
-            await Token.findOneAndUpdate(
+            const result = await Token.findOneAndUpdate(
                 { channelName: this.channelName },
                 tokenData,
                 options
             );
 
+            console.log('Tokens saved for channel:', this.channelName);
             return { success: true };
         } catch (error) {
-            console.error(`Failed to save tokens for ${this.channelName}:`, error.message);
+            console.error('Failed to save tokens:', error);
             return { success: false, error: error.message };
         }
     }

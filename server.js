@@ -122,12 +122,11 @@ app.get('/auth/twitch', (req, res) => {
     res.redirect(authUrl);
 });
 
-// Twitch OAuth Callback
 app.get('/auth/twitch/callback', async (req, res) => {
     try {
         const { code, state } = req.query;
 
-        // Exchange code for tokens
+        // 1. Exchange code for tokens
         const tokenResponse = await axios.post('https://id.twitch.tv/oauth2/token', null, {
             params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
@@ -139,7 +138,7 @@ app.get('/auth/twitch/callback', async (req, res) => {
             timeout: 5000
         });
 
-        // Get channel info
+        // 2. Get channel info
         const userResponse = await axios.get('https://api.twitch.tv/helix/users', {
             headers: {
                 'Authorization': `Bearer ${tokenResponse.data.access_token}`,
@@ -147,10 +146,6 @@ app.get('/auth/twitch/callback', async (req, res) => {
             },
             timeout: 5000
         });
-
-        if (!userResponse.data.data?.length) {
-            throw new Error('No channel data returned from Twitch');
-        }
 
         const channelInfo = userResponse.data.data[0];
 
@@ -160,16 +155,17 @@ app.get('/auth/twitch/callback', async (req, res) => {
             const saveResult = await tokenManager.saveTokens(tokenResponse.data, channelInfo);
 
             if (!saveResult.success) {
-                throw new Error('Failed to save tokens');
+                throw new Error('Failed to save tokens to database');
             }
 
-            // Redirect to hub with token in URL for the frontend to handle
+            // Generate admin token
             const adminToken = jwt.sign(
                 { role: 'admin' },
                 process.env.JWT_SECRET,
                 { expiresIn: '8h' }
             );
 
+            // Redirect to hub with token in URL
             return res.redirect(`/hub.html?token=${adminToken}&connect_success=true`);
         } else {
             // STREAMER LOGIN
@@ -520,7 +516,10 @@ app.get('/hub.html', (req, res) => {
     const token = req.query.token;
     if (token) {
         try {
-            jwt.verify(token, process.env.JWT_SECRET);
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            if (decoded.role !== 'admin') {
+                return res.redirect('/login.html');
+            }
             return res.sendFile(path.join(__dirname, 'public/hub.html'));
         } catch (err) {
             return res.redirect('/login.html');
@@ -544,6 +543,11 @@ app.get('/hub.html', (req, res) => {
     } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
+});
+
+app.get('/c/:channel.html', (req, res) => {
+    // Check for token in localStorage (handled by frontend)
+    res.sendFile(path.join(__dirname, 'public/channel.html'));
 });
 
 app.get('/c/:channel.html', authenticate, (req, res) => {
