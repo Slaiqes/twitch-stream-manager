@@ -44,10 +44,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Authentication Middleware
 function authenticate(req, res, next) {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = req.cookies?.token || req.headers['authorization']?.split(' ')[1];
 
     if (!token) {
+        if (req.accepts('html')) {
+            return res.redirect('/login');
+        }
         return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -56,6 +58,10 @@ function authenticate(req, res, next) {
         req.user = decoded;
         next();
     } catch (err) {
+        if (req.accepts('html')) {
+            res.clearCookie('token');
+            return res.redirect('/login');
+        }
         return res.status(401).json({ error: 'Invalid token' });
     }
 }
@@ -72,7 +78,7 @@ function checkChannelAccess(req, res, next) {
 
 // Routes
 app.get('/', (req, res) => {
-    res.redirect('/login.html');
+    res.redirect('/login');
 });
 
 // Admin Login
@@ -99,7 +105,7 @@ app.post('/api/admin/login', (req, res) => {
 
 // Twitch OAuth Routes
 app.get('/auth/twitch', (req, res) => {
-    const isAdminConnecting = req.headers.referer?.includes('/hub');
+    const isAdminConnecting = req.headers.referer?.includes('/hub.html');
     const state = isAdminConnecting ? 'admin_connect' : 'streamer_login';
 
     const scopes = [
@@ -165,10 +171,15 @@ app.get('/auth/twitch/callback', async (req, res) => {
                 { expiresIn: '8h' }
             );
 
-            // Redirect to hub with token in URL
-            return res.redirect(`/hub.html?token=${adminToken}&connect_success=true`);
+            // Set cookie and redirect
+            res.cookie('token', adminToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
+            return res.redirect(`/hub.html?connect_success=true`);
         } else {
             // STREAMER LOGIN
+            const tokenManager = new TokenManager(channelInfo.login);
+            await tokenManager.saveTokens(tokenResponse.data, channelInfo);
+
+            // Generate streamer token
             const token = jwt.sign(
                 {
                     role: 'streamer',
@@ -178,7 +189,9 @@ app.get('/auth/twitch/callback', async (req, res) => {
                 { expiresIn: '8h' }
             );
 
-            return res.redirect(`/login-success?token=${token}&channel=${channelInfo.login}`);
+            // Set cookie and redirect
+            res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
+            return res.redirect(`/c/${channelInfo.login}`);
         }
     } catch (error) {
         console.error('OAuth callback error:', error);
@@ -186,24 +199,9 @@ app.get('/auth/twitch/callback', async (req, res) => {
     }
 });
 
-// Login success page to set tokens
-app.get('/login-success', (req, res) => {
-    res.send(`
-        <html>
-            <body>
-                <script>
-                    localStorage.setItem('authToken', '${req.query.token}');
-                    localStorage.setItem('userRole', 'streamer');
-                    localStorage.setItem('channelName', '${req.query.channel}');
-                    window.location.href = '/c/${req.query.channel}.html';
-                </script>
-            </body>
-        </html>
-    `);
-});
-
 // Channel List
 app.get('/api/channels', authenticate, async (req, res) => {
+    console.log('API Channels Request - User:', req.user);
     try {
         if (req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied' });
@@ -506,56 +504,44 @@ app.get('/api/:channel/user-id', authenticate, checkChannelAccess, async (req, r
     }
 });
 
-// Static File Routes
-app.get('/login.html', (req, res) => {
+
+app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/login.html'));
 });
 
-app.get('/hub.html', (req, res) => {
-    // Check for token in query string (for OAuth redirect)
-    const token = req.query.token;
-    if (token) {
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            if (decoded.role !== 'admin') {
-                return res.redirect('/login.html');
-            }
-            return res.sendFile(path.join(__dirname, 'public/hub.html'));
-        } catch (err) {
-            return res.redirect('/login.html');
-        }
-    }
 
-    // Normal authentication check
-    const authHeader = req.headers.authorization;
-    const authToken = authHeader && authHeader.split(' ')[1];
 
-    if (!authToken) {
-        return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    try {
-        const decoded = jwt.verify(authToken, process.env.JWT_SECRET);
-        if (decoded.role !== 'admin') {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        res.sendFile(path.join(__dirname, 'public/hub.html'));
-    } catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
-    }
-});
-
-app.get('/c/:channel.html', (req, res) => {
-    // Check for token in localStorage (handled by frontend)
-    res.sendFile(path.join(__dirname, 'public/channel.html'));
-});
-
-app.get('/c/:channel.html', authenticate, (req, res) => {
+app.get('/c/:channel', authenticate, (req, res) => {
     if (req.user.role !== 'admin' && req.user.channel !== req.params.channel) {
-        return res.status(403).json({ error: 'Access denied' });
+        return res.redirect('/login?error=access_denied');
     }
     res.sendFile(path.join(__dirname, 'public/channel.html'));
 });
+
+
+// Serve HTML files without .html extension
+app.get('/:page', (req, res) => {
+    const page = req.params.page;
+    const validPages = ['login', 'hub', 'c']; // Add any other page names here
+
+    if (validPages.includes(page.split('/')[0])) {
+        // Check if it's a channel page
+        if (page.startsWith('c/')) {
+            const channelName = page.split('/')[1];
+            return res.sendFile(path.join(__dirname, 'public/channel.html'));
+        }
+
+        // Check if file exists
+        const filePath = path.join(__dirname, 'public', `${page}.html`);
+        if (fs.existsSync(filePath)) {
+            return res.sendFile(filePath);
+        }
+    }
+
+    // Handle 404
+    res.status(404).sendFile(path.join(__dirname, 'public/404.html'));
+});
+
 
 // Helper Functions
 async function handleModAction(req, res, action, body = null, params = {}) {

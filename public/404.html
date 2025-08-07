@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/images/pfp_logo.png" type="image/png">
+    <title>Stream Manager - 404 Page Not Found</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+        .not-found-page {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: var(--dark-1);
+            text-align: center;
+            padding: var(--space-lg);
+        }
+
+        .not-found-code {
+            font-size: 6rem;
+            font-weight: 800;
+            color: var(--primary);
+            margin-bottom: var(--space-sm);
+        }
+
+        .not-found-message {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-md);
+        }
+
+        .not-found-description {
+            color: var(--text-muted);
+            margin-bottom: var(--space-lg);
+            max-width: 500px;
+        }
+
+        .not-found-page .btn {
+            padding: 0.75rem 2rem;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="not-found-page">
+        <div class="not-found-code">404</div>
+        <div class="not-found-message">Page Not Found</div>
+        <div class="not-found-description">
+            Sorry, the page you're looking for doesn’t exist or may have been moved.
+        </div>
+        <a href="/" class="btn btn-primary">Go Home</a>
+    </div>
+</body>
+
+</html>

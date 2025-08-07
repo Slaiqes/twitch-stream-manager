@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check authentication
     const token = localStorage.getItem('authToken');
     if (!token) {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return;
     }
 
@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Remove .html extension if present
         currentChannel = pathParts[1].replace('.html', '');
     } else {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return;
     }
 
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const userChannel = localStorage.getItem('channelName');
 
     if (userRole !== 'admin' && userChannel !== currentChannel) {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return;
     }
 
@@ -49,8 +49,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadChannelData() {
+    console.log('Loading channel data for:', currentChannel);
+    console.log('Current token:', localStorage.getItem('authToken'));
+
     try {
         const token = localStorage.getItem('authToken');
+        if (!token) throw new Error('No token found');
 
         // Load channel info
         const response = await fetch(`/api/channels`, {
@@ -61,16 +65,30 @@ async function loadChannelData() {
         });
 
         if (response.status === 401) {
-            window.location.href = '/login.html';
+            // Token is invalid, clear storage and redirect
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('channelName');
+            window.location.href = '/login';
             return;
         }
 
-        if (!response.ok) throw new Error('Failed to load channels');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
         const channels = await response.json();
         channelData = channels.find(c => c.login === currentChannel);
 
-        if (!channelData) throw new Error('Channel not found');
+        if (!channelData) {
+            // If admin, redirect to hub
+            const role = localStorage.getItem('userRole');
+            if (role === 'admin') {
+                window.location.href = '/hub.html';
+                return;
+            }
+            throw new Error('Channel not found');
+        }
 
         // Update UI
         document.getElementById('channelName').textContent = channelData.display_name;
@@ -85,8 +103,13 @@ async function loadChannelData() {
 
     } catch (error) {
         console.error('Failed to load channel data:', error);
-        alert('Failed to load channel data');
-        window.location.href = '/hub.html';
+
+        // Clear storage and redirect to login
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('channelName');
+
+        window.location.href = '/login';
     }
 }
 
@@ -126,10 +149,10 @@ async function loadStreamInfo() {
         const token = localStorage.getItem('authToken');
         const response = await fetch(`/api/${currentChannel}/stream-info`, {
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
-
         if (!response.ok) throw new Error('Failed to load stream info');
 
         const data = await response.json();
@@ -229,7 +252,7 @@ function setupActionHandlers() {
     // Back to Hub
     document.getElementById('backToHubBtn').addEventListener('click', (e) => {
         e.preventDefault();
-        window.location.href = '/hub';
+        window.location.href = '/hub.html';
     });
 
     // Logout
@@ -238,7 +261,7 @@ function setupActionHandlers() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('userRole');
         localStorage.removeItem('channelName');
-        window.location.href = '/login.html';
+        window.location.href = '/login';
     });
 }
 

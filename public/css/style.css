@@ -83,9 +83,7 @@ a {
     transition: color 0.2s;
 }
 
-a:hover {
-    color: var(--primary-light);
-}
+
 
 /* ===== Utility Classes ===== */
 .text-center {
@@ -359,26 +357,35 @@ a:hover {
 .nav-item {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: var(--space-sm);
     border-radius: var(--border-radius);
     margin-bottom: var(--space-xs);
     color: var(--text-secondary);
     transition: all 0.2s;
+    gap: var(--space-sm);
+    white-space: nowrap;
 }
 
 .nav-item i {
-    width: 24px;
+    width: 20px;
     text-align: center;
-    margin-right: var(--space-sm);
+    flex-shrink: 0;
 }
 
 .nav-item span {
-    flex: 1;
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .nav-item .badge {
+    flex-shrink: 0;
     margin-left: auto;
 }
+
+
 
 .nav-item:hover {
     background-color: var(--dark-3);
@@ -839,4 +846,57 @@ a:hover {
 
 .status-pulse {
     animation: pulse 2s infinite;
+}
+
+.oauth-icon {
+    height: 20px;
+    width: auto;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+
+
+.search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background-color: var(--dark-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.5rem 1rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-box:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(145, 71, 255, 0.1);
+}
+
+.search-box i {
+    color: var(--text-muted);
+    font-size: 1rem;
+    margin-right: 0.5rem;
+}
+
+.search-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    width: 100%;
+    font-family: inherit;
+    padding: 0;
+}
+
+.search-box input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.search-box input:focus::placeholder {
+    opacity: 0.4;
 }
