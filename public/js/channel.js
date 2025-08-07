@@ -3,42 +3,90 @@ let channelData = null;
 let modStatsChart = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check authentication
-    const token = localStorage.getItem('authToken');
+    // First check for token in URL (fallback for cookie issues)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+
+    if (urlToken) {
+        try {
+            const decoded = jwt_decode(urlToken);
+
+            // Store in both cookie and localStorage
+            document.cookie = `token=${urlToken}; path=/; max-age=${8 * 60 * 60}; ${location.protocol === 'https:' ? 'secure; sameSite=lax' : ''}`;
+            localStorage.setItem('authToken', urlToken);
+            localStorage.setItem('userRole', decoded.role);
+            localStorage.setItem('channelName', decoded.channel);
+
+            // Remove token from URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            // Continue with initialization
+            await initializeChannel();
+            return;
+        } catch (err) {
+            console.error('Invalid URL token:', err);
+            clearAuth();
+        }
+    }
+
+    // Fall back to normal token check
+    await checkAuthAndInitialize();
+});
+
+async function checkAuthAndInitialize() {
+    // Check authentication from localStorage or cookie
+    const token = localStorage.getItem('authToken') ||
+        document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+
     if (!token) {
-        window.location.href = '/login';
+        clearAuth();
         return;
     }
 
     // Get channel from URL
     const pathParts = window.location.pathname.split('/').filter(part => part);
     if (pathParts[0] === 'c' && pathParts[1]) {
-        // Remove .html extension if present
         currentChannel = pathParts[1].replace('.html', '');
     } else {
-        window.location.href = '/login';
+        clearAuth();
         return;
     }
 
-    // Check permissions
-    const userRole = localStorage.getItem('userRole');
-    const userChannel = localStorage.getItem('channelName');
+    try {
+        const decoded = jwt_decode(token);
 
-    if (userRole !== 'admin' && userChannel !== currentChannel) {
-        window.location.href = '/login';
-        return;
-    }
+        // Verify permissions
+        if (decoded.role !== 'admin' && decoded.channel !== currentChannel) {
+            throw new Error('Channel access denied');
+        }
 
-    // Hide back to hub button for non-admins
-    if (userRole !== 'admin') {
-        document.getElementById('backToHubBtn').style.display = 'none';
+        // Store user info
+        localStorage.setItem('userRole', decoded.role);
+        if (decoded.channel) {
+            localStorage.setItem('channelName', decoded.channel);
+        }
+
+        // Hide back to hub button for non-admins
+        if (decoded.role !== 'admin') {
+            document.getElementById('backToHubBtn').style.display = 'none';
+        }
+
+        // Initialize channel
+        await initializeChannel();
+    } catch (err) {
+        console.error('Authentication error:', err);
+        clearAuth();
     }
+}
+
+async function initializeChannel() {
     // Update the back to hub button handler
     document.getElementById('backToHubBtn')?.addEventListener('click', (e) => {
         e.preventDefault();
         window.location.href = '/hub.html';
     });
-    // Initialize
+
+    // Initialize channel components
     await loadChannelData();
     setupNavigation();
     setupActionHandlers();
@@ -46,7 +94,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update breadcrumb
     document.getElementById('breadcrumbChannel').textContent = currentChannel;
-});
+}
+
+function clearAuth() {
+    document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('channelName');
+    window.location.href = '/login';
+}
 
 async function loadChannelData() {
     console.log('Loading channel data for:', currentChannel);

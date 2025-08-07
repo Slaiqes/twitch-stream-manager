@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Channel Hub - Stream Manager</title>
+    <title>Dashboard - Stream Manager</title>
     <link rel="icon" href="/images/pfp_logo.png" type="image/png">
     <link rel="stylesheet" href="/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -16,30 +16,62 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <img src="/images/pfp_logo.png" alt="logo" class="sidebar-logo">
-                <h2>Stream Manager</h2>
+                <div class="logo-container">
+                    <!-- New SVG Logo -->
+                    <svg width="48" height="48" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg"
+                        class="sidebar-logo">
+                        <!-- Background Circle -->
+                        <circle cx="60" cy="60" r="55" fill="url(#logoGradient)" />
+
+                        <!-- Wave S Design -->
+                        <path d="M45,30 Q60,15 75,30 Q90,45 75,60 Q60,75 45,60 Q30,45 45,30" fill="none" stroke="white"
+                            stroke-width="6" stroke-linecap="round" />
+
+                        <!-- Connection Nodes -->
+                        <circle cx="45" cy="45" r="3" fill="white" />
+                        <circle cx="75" cy="45" r="3" fill="white" />
+                        <circle cx="45" cy="75" r="3" fill="white" />
+                        <circle cx="75" cy="75" r="3" fill="white" />
+
+                        <!-- Glow Effect -->
+                        <defs>
+                            <radialGradient id="logoGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+                                gradientTransform="translate(60 60) rotate(90) scale(70)">
+                                <stop offset="0.3" stop-color="#9147ff" stop-opacity="0.8" />
+                                <stop offset="1" stop-color="#9147ff" stop-opacity="0" />
+                            </radialGradient>
+                            <linearGradient id="logoGradient" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#9147ff" />
+                                <stop offset="100%" stop-color="#772ce8" />
+                            </linearGradient>
+                        </defs>
+                        <circle cx="60" cy="60" r="55" fill="url(#logoGlow)" opacity="0.7" />
+                    </svg>
+                    <div class="logo-glow"></div>
+                </div>
+                <!-- Updated Text Logo -->
+                <div class="logo-text">
+                    <span class="logo-main">Stream Manager<span class="logo-accent"></span></span>
+                    <span class="logo-sub">by Slaiqe</span>
+                </div>
             </div>
 
             <nav class="sidebar-nav">
                 <div class="nav-section">
-                    <h3 class="nav-title">MAIN</h3>
-                    <a href="/hub" class="nav-item active">
+                    <h3 class="nav-title">Navigation</h3>
+                    <a href="/hub.html" class="nav-item active">
                         <i class="fas fa-th-large"></i>
                         <span>Dashboard</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <i class="fas fa-users"></i>
+                        <span>Connected Channels</span>
+                        <span class="badge" id="channelCount">0</span>
                     </a>
                 </div>
 
                 <div class="nav-section">
-                    <h3 class="nav-title">MANAGEMENT</h3>
-                    <div class="nav-item">
-                        <i class="fas fa-users"></i>
-                        <span>Connected Channels</span>
-                        <span class="badge" id="channelCount">0</span>
-                    </div>
-                </div>
-
-                <div class="nav-section">
-                    <h3 class="nav-title">ACCOUNT</h3>
+                    <h3 class="nav-title">Account</h3>
                     <a href="#" class="nav-item" id="logoutBtn">
                         <i class="fas fa-sign-out-alt"></i>
                         <span>Logout</span>
@@ -52,16 +84,16 @@
         <main class="main-content">
             <header class="main-header">
                 <div class="header-left">
-                    <h1>Channel Hub</h1>
+                    <h1>Channel Dashboard</h1>
                     <nav class="breadcrumb">
-                        <a href="/hub">Dashboard</a>
+                        <a href="/hub.html">Home</a>
                         <span>/</span>
-                        <span>Connected Channels</span>
+                        <span>Channels</span>
                     </nav>
                 </div>
 
                 <div class="header-right">
-                    <button id="connectChannel" class="btn btn-primary">
+                    <button id="connectChannel" class="btn btn-primary btn-connect">
                         <i class="fas fa-plus"></i> Connect Channel
                     </button>
                 </div>
@@ -69,8 +101,11 @@
 
             <div class="content-section">
                 <div class="section-header">
-                    <h2>Connected Channels</h2>
-                    <div class="section-actions">
+                    <div class="header-left">
+                        <h2>Your Channels</h2>
+                        <p>Manage all connected Twitch channels</p>
+                    </div>
+                    <div class="header-right">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
                             <input type="text" placeholder="Search channels...">

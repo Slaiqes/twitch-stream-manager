@@ -109,22 +109,38 @@ document.getElementById('adminLoginForm')?.addEventListener('submit', async (e) 
     }
 });
 
-// Tab switching on login page
-document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-        const tabType = tab.getAttribute('data-tab');
+document.addEventListener('DOMContentLoaded', () => {
+    // Set the initial active tab to Streamer if not already set
+    const defaultTab = document.querySelector('.tab[data-tab="streamer"]');
+    if (!document.querySelector('.tab.active')) {
+        defaultTab.classList.add('active'); // Corrected the add active class to just 'active'
+    }
 
-        // Update active tab
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
+    // Set the initial active form to Streamer if not already set
+    const defaultForm = document.querySelector('.auth-form[data-form="streamer"]');
+    if (defaultForm && !document.querySelector('.auth-form.active')) {
+        defaultForm.classList.add('active'); // Show Streamer form by default
+    }
 
-        // Show corresponding form
-        document.querySelectorAll('.auth-form').forEach(form => {
-            form.classList.remove('active');
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabType = tab.getAttribute('data-tab');
+
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Show corresponding form
+            document.querySelectorAll('.auth-form').forEach(form => {
+                form.classList.remove('active');
+            });
+            document.querySelector(`.auth-form[data-form="${tabType}"]`).classList.add('active');
         });
-        document.querySelector(`.auth-form[data-form="${tabType}"]`).classList.add('active');
     });
 });
+
+
+
 
 // Initialize hub page
 function initializeHub() {
@@ -195,37 +211,53 @@ async function loadChannels() {
 
         if (channels.length === 0) {
             channelList.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-stream"></i>
-                    <h3>No channels connected</h3>
-                    <p>Connect your first Twitch channel to get started</p>
-                    <button id="connectChannel" class="btn btn-primary">
-                        <i class="fas fa-plus"></i> Connect Channel
-                    </button>
-                </div>
-            `;
+        <div class="empty-state">
+          <i class="fas fa-stream"></i>
+          <h3>No channels connected</h3>
+          <p>Connect your first Twitch channel to get started</p>
+          <button id="connectChannel" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Connect Channel
+          </button>
+        </div>
+      `;
             return;
         }
 
+        // In your loadChannels() function
         channels.forEach(channel => {
             const channelCard = document.createElement('div');
             channelCard.className = 'channel-card';
             channelCard.innerHTML = `
-                <div class="card-header">
-                    <img src="${channel.profile_image_url}" alt="${channel.display_name}" class="channel-avatar">
-                    <span class="channel-status status-${channel.status}">${channel.status}</span>
-                </div>
-                <div class="card-body">
+        <div class="channel-card-content">
+            <div class="channel-avatar-container">
+                <img src="${channel.profile_image_url}" alt="${channel.display_name}" class="channel-avatar">
+                ${channel.isLive ? '<span class="live-badge">LIVE</span>' : ''}
+            </div>
+            <div class="channel-info">
+                <div class="channel-header">
                     <h3>${channel.display_name}</h3>
-                    <p class="channel-meta">
-                        <span>${channel.broadcaster_type || 'Streamer'}</span>
-                        <span>Connected ${new Date(channel.connectedAt).toLocaleDateString()}</span>
-                    </p>
-                    <a href="/c/${channel.login}" class="btn btn-primary btn-block">
-                        <i class="fas fa-cog"></i> Manage Channel
-                    </a>
+                    <span class="broadcaster-status ${channel.broadcaster_type || 'streamer'}">
+                        ${channel.broadcaster_type || 'Streamer'}
+                    </span>
                 </div>
-            `;
+                
+                <div class="status-divider"></div>
+                
+                <div class="channel-stats">
+                    <span class="follower-count">
+                        <i class="fas fa-users"></i> ${channel.followers.toLocaleString()}
+                    </span>
+                    <span class="stream-status ${channel.isLive ? 'live' : 'offline'}">
+                        <i class="fas fa-circle"></i> ${channel.isLive ? 'Live Now' : 'Channel Offline'}
+                    </span>
+                </div>
+                
+                <a href="/c/${channel.login}" class="btn btn-manage">
+                    <i class="fas fa-cog"></i> Manage
+                </a>
+            </div>
+        </div>
+    `;
             channelList.appendChild(channelCard);
         });
     } catch (error) {

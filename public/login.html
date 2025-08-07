@@ -15,51 +15,55 @@
     <div class="auth-container">
         <div class="auth-card">
             <div class="auth-header">
-                <img src="/images/pfp_logo.png" alt="Twitch" class="auth-logo">
+                <div class="logo-container">
+                    <div class="logo-glow"></div>
+                </div>
                 <h1 class="auth-title">Stream Manager</h1>
-                <p class="auth-subtitle">Manage your Twitch channel with ease</p>
+                <p class="auth-subtitle">Elevate your streaming experience</p>
             </div>
 
             <div class="auth-tabs">
-                <div class="tab active" data-tab="admin">Admin Login</div>
-                <div class="tab" data-tab="streamer">Streamer Login</div>
+                <div class="tab active" data-tab="streamer">
+                    <i class="fas fa-stream"></i> Streamer
+                </div>
+                <div class="tab" data-tab="admin">
+                    <i class="fas fa-user-shield"></i> Admin
+                </div>
+            </div>
+
+
+
+
+            <!-- Streamer Login -->
+            <div class="auth-form active" data-form="streamer">
+                <a href="/auth/twitch" class="btn btn-twitch btn-block">
+                    <img src="/images/twitch-logo.png" alt="Twitch" class="oauth-icon">
+                    Continue with Twitch
+                </a>
+                <div class="auth-divider">
+                    <span>or</span>
+                </div>
+                <p class="auth-note">Soon more...</p>
             </div>
 
             <!-- Admin Login Form -->
-            <form id="adminLoginForm" class="auth-form active" data-form="admin">
+            <form id="adminLoginForm" class="auth-form" data-form="admin">
                 <div class="form-group">
-                    <label for="username">Username</label>
                     <div class="input-with-icon">
                         <i class="fas fa-user"></i>
-                        <input type="text" id="username" class="form-control" placeholder="Enter admin username"
-                            required>
+                        <input type="text" id="username" class="form-control" placeholder="Admin username" required>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="password">Password</label>
                     <div class="input-with-icon">
                         <i class="fas fa-lock"></i>
-                        <input type="password" id="password" class="form-control" placeholder="Enter password" required>
+                        <input type="password" id="password" class="form-control" placeholder="Password" required>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">
+                <button type="submit" class="btn btn-primary btn-block btn-login">
                     <i class="fas fa-sign-in-alt"></i> Login
                 </button>
             </form>
-
-            <!-- Streamer Login -->
-            <div class="auth-form" data-form="streamer">
-                <div class="oauth-buttons">
-                    <a href="/auth/twitch" class="btn btn-twitch btn-block">
-                        <img src="/images/twitch-logo.png" alt="Twitch" class="oauth-icon">
-                        Login with Twitch
-                    </a>
-                </div>
-                <div class="auth-divider">
-                    <span>OR</span>
-                </div>
-                <p class="auth-note">Admins can also connect channels from the hub</p>
-            </div>
         </div>
 
         <div class="auth-footer">

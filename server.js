@@ -109,6 +109,8 @@ app.get('/auth/twitch', (req, res) => {
     const state = isAdminConnecting ? 'admin_connect' : 'streamer_login';
 
     const scopes = [
+        'moderator:read:followers',
+        'channel:read:stream_key',
         'moderator:manage:banned_users',
         'channel:manage:broadcast',
         'channel:read:subscriptions',
@@ -116,6 +118,7 @@ app.get('/auth/twitch', (req, res) => {
         'channel:read:vips',
         'channel:manage:vips',
         'channel:edit:commercial'
+
     ].join('+');
 
     const authUrl = `https://id.twitch.tv/oauth2/authorize?response_type=code` +
@@ -207,31 +210,63 @@ app.get('/api/channels', authenticate, async (req, res) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        const channels = await Token.aggregate([
-            {
-                $project: {
-                    _id: 0,
-                    id: '$channelData.id',
-                    login: '$channelData.login',
-                    display_name: '$channelData.display_name',
-                    profile_image_url: '$channelData.profile_image_url',
-                    broadcaster_type: '$channelData.broadcaster_type',
-                    connectedAt: '$channelData.connectedAt',
-                    expiresAt: 1,
-                    status: {
-                        $cond: {
-                            if: { $gt: ['$expiresAt', new Date()] },
-                            then: 'connected',
-                            else: 'expired'
-                        }
-                    },
-                    refreshAt: {
-                        $subtract: ['$expiresAt', 5 * 60 * 1000]
-                    }
-                }
-            },
-            { $sort: { connectedAt: -1 } }
-        ]);
+        // First get all channels from database
+        const tokens = await Token.find().lean();
+
+        // Then fetch both follower count and stream status for each channel
+        const channels = await Promise.all(tokens.map(async (token) => {
+            const tokenManager = new TokenManager(token.channelName);
+            const accessToken = await tokenManager.getAccessToken();
+            const broadcasterId = token.channelData.id;
+
+            try {
+                // Make parallel requests for followers and stream status
+                const [followersResponse, streamResponse] = await Promise.all([
+                    // Follower count request
+                    axios.get('https://api.twitch.tv/helix/channels/followers', {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Client-Id': process.env.TWITCH_CLIENT_ID
+                        },
+                        params: { broadcaster_id: broadcasterId }
+                    }),
+                    // Stream status request
+                    axios.get('https://api.twitch.tv/helix/streams', {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Client-Id': process.env.TWITCH_CLIENT_ID
+                        },
+                        params: { user_id: broadcasterId }
+                    })
+                ]);
+
+                return {
+                    id: token.channelData.id,
+                    login: token.channelData.login,
+                    display_name: token.channelData.display_name,
+                    profile_image_url: token.channelData.profile_image_url,
+                    broadcaster_type: token.channelData.broadcaster_type,
+                    connectedAt: token.channelData.connectedAt,
+                    expiresAt: token.expiresAt,
+                    followers: followersResponse.data.total || 0,
+                    status: token.expiresAt > new Date() ? 'connected' : 'expired',
+                    refreshAt: new Date(token.expiresAt.getTime() - 5 * 60 * 1000),
+                    isLive: streamResponse.data.data.length > 0, // True if stream exists
+                    streamData: streamResponse.data.data[0] || null // Optional: include stream details
+                };
+            } catch (error) {
+                console.error(`Error fetching data for ${token.channelName}:`, error);
+                return {
+                    ...token,
+                    followers: 0,
+                    isLive: false,
+                    status: 'error'
+                };
+            }
+        }));
+
+        // Sort by connection date
+        channels.sort((a, b) => b.connectedAt - a.connectedAt);
 
         res.json(channels);
     } catch (error) {

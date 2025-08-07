@@ -41,6 +41,14 @@ const TokenSchema = new mongoose.Schema({
         enum: ['bearer'],
         default: 'bearer'
     },
+    followerCount: {
+        type: Number,
+        default: 0
+    },
+    followerCountUpdated: {
+        type: Date,
+        default: Date.now
+    },
     channelData: {
         type: {
             id: { type: String, required: true },
