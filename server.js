@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const Token = require('./models/Token');
 const TokenManager = require('./tokenManager');
 const ModAction = require('./models/modAction');
+const fs = require('fs');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,29 +26,37 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/streammanager',
         process.exit(1);
     });
 
-// Connection event handlers
-mongoose.connection.on('connected', () => {
-    console.log(`Mongoose connected to ${mongoose.connection.host}`);
-});
-
-mongoose.connection.on('error', (err) => {
-    console.error('Mongoose connection error:', err);
-});
-
-mongoose.connection.on('disconnected', () => {
-    console.log('Mongoose disconnected');
-});
-
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public'), {
+    extensions: ['html'],
+    setHeaders: (res) => {
+        res.set('Cache-Control', 'no-store');
+    }
+}));
+
+// Logging middleware
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+});
+
+// CORS middleware
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    next();
+});
 
 // Authentication Middleware
 function authenticate(req, res, next) {
     const token = req.cookies?.token || req.headers['authorization']?.split(' ')[1];
 
     if (!token) {
+        console.log('No token found');
         if (req.accepts('html')) {
             return res.redirect('/login');
         }
@@ -56,24 +66,28 @@ function authenticate(req, res, next) {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
+
+        // For channel pages (/c/username)
+        if (req.path.startsWith('/c/')) {
+            const channelName = req.path.split('/c/')[1].split('/')[0].replace('.html', '');
+
+            // Allow access if:
+            // - User is admin OR
+            // - User is the channel owner
+            if (decoded.role !== 'admin' && decoded.channel !== channelName) {
+                console.log(`Access denied to channel ${channelName}`);
+                return res.redirect('/login');
+            }
+        }
+
         next();
     } catch (err) {
-        if (req.accepts('html')) {
-            res.clearCookie('token');
-            return res.redirect('/login');
-        }
-        return res.status(401).json({ error: 'Invalid token' });
+        console.error('Token verification failed:', err);
+        res.clearCookie('token');
+        return req.accepts('html')
+            ? res.redirect('/login')
+            : res.status(401).json({ error: 'Invalid token' });
     }
-}
-
-function checkChannelAccess(req, res, next) {
-    const channelName = req.params.channelName;
-    const { role, channel } = req.user;
-
-    if (role === 'admin') return next();
-    if (channel === channelName) return next();
-
-    return res.status(403).json({ error: 'Access denied' });
 }
 
 // Routes
@@ -94,6 +108,13 @@ app.post('/api/admin/login', (req, res) => {
             { expiresIn: '8h' }
         );
 
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 8 * 60 * 60 * 1000
+        });
+
         return res.json({
             token,
             role: 'admin'
@@ -103,11 +124,8 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
 });
 
-// Twitch OAuth Routes
+// Twitch OAuth
 app.get('/auth/twitch', (req, res) => {
-    const isAdminConnecting = req.headers.referer?.includes('/hub.html');
-    const state = isAdminConnecting ? 'admin_connect' : 'streamer_login';
-
     const scopes = [
         'moderator:read:followers',
         'channel:read:stream_key',
@@ -118,14 +136,12 @@ app.get('/auth/twitch', (req, res) => {
         'channel:read:vips',
         'channel:manage:vips',
         'channel:edit:commercial'
-
     ].join('+');
 
     const authUrl = `https://id.twitch.tv/oauth2/authorize?response_type=code` +
         `&client_id=${process.env.TWITCH_CLIENT_ID}` +
         `&redirect_uri=${encodeURIComponent(process.env.TWITCH_REDIRECT_URI)}` +
         `&scope=${scopes}` +
-        `&state=${state}` +
         `&force_verify=true`;
 
     res.redirect(authUrl);
@@ -133,9 +149,9 @@ app.get('/auth/twitch', (req, res) => {
 
 app.get('/auth/twitch/callback', async (req, res) => {
     try {
-        const { code, state } = req.query;
+        const { code } = req.query;
 
-        // 1. Exchange code for tokens
+        // Exchange code for tokens
         const tokenResponse = await axios.post('https://id.twitch.tv/oauth2/token', null, {
             params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
@@ -143,86 +159,126 @@ app.get('/auth/twitch/callback', async (req, res) => {
                 code,
                 grant_type: 'authorization_code',
                 redirect_uri: process.env.TWITCH_REDIRECT_URI
-            },
-            timeout: 5000
+            }
         });
 
-        // 2. Get channel info
+        // Get user info
         const userResponse = await axios.get('https://api.twitch.tv/helix/users', {
             headers: {
                 'Authorization': `Bearer ${tokenResponse.data.access_token}`,
                 'Client-Id': process.env.TWITCH_CLIENT_ID
-            },
-            timeout: 5000
+            }
         });
 
         const channelInfo = userResponse.data.data[0];
 
-        if (state === 'admin_connect') {
-            // ADMIN CONNECTING A CHANNEL
-            const tokenManager = new TokenManager(channelInfo.login);
-            const saveResult = await tokenManager.saveTokens(tokenResponse.data, channelInfo);
+        // Save tokens to database
+        const tokenManager = new TokenManager(channelInfo.login);
+        await tokenManager.saveTokens(tokenResponse.data, channelInfo);
 
-            if (!saveResult.success) {
-                throw new Error('Failed to save tokens to database');
-            }
+        // Create session token
+        const token = jwt.sign(
+            {
+                role: 'streamer',
+                channel: channelInfo.login,
+                userId: channelInfo.id
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
+        );
 
-            // Generate admin token
-            const adminToken = jwt.sign(
-                { role: 'admin' },
-                process.env.JWT_SECRET,
-                { expiresIn: '8h' }
-            );
+        // Set cookie and redirect
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            domain: 'localhost',
+            maxAge: 8 * 60 * 60 * 1000
+        });
 
-            // Set cookie and redirect
-            res.cookie('token', adminToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
-            return res.redirect(`/hub.html?connect_success=true`);
-        } else {
-            // STREAMER LOGIN
-            const tokenManager = new TokenManager(channelInfo.login);
-            await tokenManager.saveTokens(tokenResponse.data, channelInfo);
+        // Simple redirect - client will verify auth
+        res.redirect(`/c/${channelInfo.login}`);
 
-            // Generate streamer token
-            const token = jwt.sign(
-                {
-                    role: 'streamer',
-                    channel: channelInfo.login
-                },
-                process.env.JWT_SECRET,
-                { expiresIn: '8h' }
-            );
-
-            // Set cookie and redirect
-            res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
-            return res.redirect(`/c/${channelInfo.login}`);
-        }
     } catch (error) {
         console.error('OAuth callback error:', error);
-        res.redirect('/login.html?error=oauth_failed');
+        res.redirect('/login?error=oauth_failed');
     }
 });
 
-// Channel List
-app.get('/api/channels', authenticate, async (req, res) => {
-    console.log('API Channels Request - User:', req.user);
+// Channel Route - Must be authenticated
+app.get('/c/:channel', authenticate, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/channel.html'));
+});
+
+// Auth Verification Endpoint
+app.get('/api/verify-auth', authenticate, (req, res) => {
+    res.json({
+        authenticated: true,
+        user: req.user
+    });
+});
+
+// Static Files and 404
+app.get('/:page', (req, res) => {
+    const page = req.params.page;
+    const filePath = path.join(__dirname, 'public', `${page}.html`);
+
+    if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+    }
+
+    res.status(404).sendFile(path.join(__dirname, 'public/404.html'));
+});
+
+
+// User ID Lookup
+app.get('/api/:channel/user-id', async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Access denied' });
+        const tokenManager = new TokenManager(req.params.channel);
+        const accessToken = await tokenManager.getAccessToken();
+
+        const response = await axios.get('https://api.twitch.tv/helix/users', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID
+            },
+            params: { login: req.query.username }
+        });
+
+        if (response.data.data.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        // First get all channels from database
+        res.json({ userId: response.data.data[0].id });
+    } catch (error) {
+        console.error('User ID lookup error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to lookup user ID' });
+    }
+});
+
+
+// Channel List Endpoint
+app.get('/api/channels', authenticate, async (req, res) => {
+    try {
+        console.log('Fetching channels for user:', req.user);
+
+        // Only admin can list all channels
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        // Get all channels from database
         const tokens = await Token.find().lean();
 
-        // Then fetch both follower count and stream status for each channel
+        // Fetch additional info for each channel
         const channels = await Promise.all(tokens.map(async (token) => {
             const tokenManager = new TokenManager(token.channelName);
             const accessToken = await tokenManager.getAccessToken();
             const broadcasterId = token.channelData.id;
 
             try {
-                // Make parallel requests for followers and stream status
+                // Get both followers and stream status in parallel
                 const [followersResponse, streamResponse] = await Promise.all([
-                    // Follower count request
                     axios.get('https://api.twitch.tv/helix/channels/followers', {
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -230,7 +286,6 @@ app.get('/api/channels', authenticate, async (req, res) => {
                         },
                         params: { broadcaster_id: broadcasterId }
                     }),
-                    // Stream status request
                     axios.get('https://api.twitch.tv/helix/streams', {
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -251,8 +306,8 @@ app.get('/api/channels', authenticate, async (req, res) => {
                     followers: followersResponse.data.total || 0,
                     status: token.expiresAt > new Date() ? 'connected' : 'expired',
                     refreshAt: new Date(token.expiresAt.getTime() - 5 * 60 * 1000),
-                    isLive: streamResponse.data.data.length > 0, // True if stream exists
-                    streamData: streamResponse.data.data[0] || null // Optional: include stream details
+                    isLive: streamResponse.data.data.length > 0,
+                    streamData: streamResponse.data.data[0] || null
                 };
             } catch (error) {
                 console.error(`Error fetching data for ${token.channelName}:`, error);
@@ -265,10 +320,11 @@ app.get('/api/channels', authenticate, async (req, res) => {
             }
         }));
 
-        // Sort by connection date
+        // Sort by connection date (newest first)
         channels.sort((a, b) => b.connectedAt - a.connectedAt);
 
         res.json(channels);
+
     } catch (error) {
         console.error('Channel list error:', error);
         res.status(500).json({
@@ -278,8 +334,70 @@ app.get('/api/channels', authenticate, async (req, res) => {
     }
 });
 
+// Add this to server.js
+app.get('/api/channels/:channel', authenticate, async (req, res) => {
+    try {
+        const channelName = req.params.channel;
+
+        // Only admin can access any channel, others can only access their own
+        if (req.user.role !== 'admin' && req.user.channel !== channelName) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        // Get channel from database
+        const token = await Token.findOne({ channelName }).lean();
+        if (!token) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+
+        const tokenManager = new TokenManager(channelName);
+        const accessToken = await tokenManager.getAccessToken();
+        const broadcasterId = token.channelData.id;
+
+        // Get both followers and stream status in parallel
+        const [followersResponse, streamResponse] = await Promise.all([
+            axios.get('https://api.twitch.tv/helix/channels/followers', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Client-Id': process.env.TWITCH_CLIENT_ID
+                },
+                params: { broadcaster_id: broadcasterId }
+            }),
+            axios.get('https://api.twitch.tv/helix/streams', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Client-Id': process.env.TWITCH_CLIENT_ID
+                },
+                params: { user_id: broadcasterId }
+            })
+        ]);
+
+        res.json({
+            id: token.channelData.id,
+            login: token.channelData.login,
+            display_name: token.channelData.display_name,
+            profile_image_url: token.channelData.profile_image_url,
+            broadcaster_type: token.channelData.broadcaster_type,
+            connectedAt: token.channelData.connectedAt,
+            expiresAt: token.expiresAt,
+            followers: followersResponse.data.total || 0,
+            status: token.expiresAt > new Date() ? 'connected' : 'expired',
+            refreshAt: new Date(token.expiresAt.getTime() - 5 * 60 * 1000),
+            isLive: streamResponse.data.data.length > 0,
+            streamData: streamResponse.data.data[0] || null
+        });
+
+    } catch (error) {
+        console.error('Channel data error:', error);
+        res.status(500).json({
+            error: 'Failed to fetch channel data',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 // Channel Actions
-app.post('/api/:channel/ban', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/ban', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -318,7 +436,39 @@ app.post('/api/:channel/ban', authenticate, checkChannelAccess, async (req, res)
     }
 });
 
-app.post('/api/:channel/timeout', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/unban', async (req, res) => {
+    try {
+        const tokenManager = new TokenManager(req.params.channel);
+        const accessToken = await tokenManager.getAccessToken();
+        const broadcasterId = await getUserId(req.params.channel, accessToken);
+
+        const response = await axios.delete('https://api.twitch.tv/helix/moderation/bans', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID,
+                'Content-Type': 'application/json'
+            },
+            params: {
+                broadcaster_id: broadcasterId,
+                moderator_id: broadcasterId,
+                user_id: req.body.userId
+            }
+        });
+
+        await logModAction({
+            channelId: broadcasterId,
+            moderatorId: broadcasterId,
+            moderatorName: req.params.channel,
+            actionType: 'unban',
+            targetUser: req.body.userId
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        handleApiError(res, error);
+    }
+});
+app.post('/api/:channel/timeout', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -358,34 +508,67 @@ app.post('/api/:channel/timeout', authenticate, checkChannelAccess, async (req, 
     }
 });
 
+// Untimeout User
+app.post('/api/:channel/untimeout', async (req, res) => {
+    try {
+        const tokenManager = new TokenManager(req.params.channel);
+        const accessToken = await tokenManager.getAccessToken();
+        const broadcasterId = await getUserId(req.params.channel, accessToken);
+
+        const response = await axios.delete('https://api.twitch.tv/helix/moderation/bans', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID
+            },
+            params: {
+                broadcaster_id: broadcasterId,
+                moderator_id: broadcasterId,
+                user_id: req.body.userId
+            }
+        });
+
+        await logModAction({
+            channelId: broadcasterId,
+            moderatorId: broadcasterId,
+            moderatorName: req.params.channel,
+            actionType: 'untimeout',
+            targetUser: req.body.userId
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        handleApiError(res, error);
+    }
+});
+
 // Moderator Management
-app.post('/api/:channel/mod', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/mod', async (req, res) => {
     await handleModAction(req, res, 'mod', {
         user_id: req.body.userId
     });
 });
 
-app.post('/api/:channel/unmod', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/unmod', async (req, res) => {
     await handleModAction(req, res, 'unmod', {
         user_id: req.body.userId
     });
 });
 
 // VIP Management
-app.post('/api/:channel/vip', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/vip', async (req, res) => {
     await handleModAction(req, res, 'vip', {
         user_id: req.body.userId
     });
 });
 
-app.post('/api/:channel/unvip', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/unvip', async (req, res) => {
     await handleModAction(req, res, 'unvip', {
         user_id: req.body.userId
     });
 });
 
 // Commercials
-app.post('/api/:channel/commercial', authenticate, checkChannelAccess, async (req, res) => {
+app.post('/api/:channel/commercial', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -409,7 +592,7 @@ app.post('/api/:channel/commercial', authenticate, checkChannelAccess, async (re
 });
 
 // Stream Info
-app.get('/api/:channel/stream-info', authenticate, checkChannelAccess, async (req, res) => {
+app.get('/api/:channel/stream-info', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -432,27 +615,80 @@ app.get('/api/:channel/stream-info', authenticate, checkChannelAccess, async (re
             })
         ]);
 
+        const channelData = channelResponse.data.data[0];
+        const streamData = streamResponse.data.data[0];
+
         res.json({
-            title: channelResponse.data.data[0]?.title,
-            category: channelResponse.data.data[0]?.game_name,
-            isLive: streamResponse.data.data.length > 0,
-            startedAt: streamResponse.data.data[0]?.started_at
+            title: channelData?.title || '',
+            category: channelData?.game_name || '',
+            isLive: !!streamData, // This should be true if stream exists
+            startedAt: streamData?.started_at || null
         });
+    } catch (error) {
+        console.error('Error fetching stream info:', error);
+        res.status(500).json({
+            error: 'Failed to fetch stream info',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+
+app.get('/api/:channel/search-categories', async (req, res) => {
+    try {
+        const tokenManager = new TokenManager(req.params.channel);
+        const accessToken = await tokenManager.getAccessToken();
+        const query = req.query.query;
+
+        const response = await axios.get('https://api.twitch.tv/helix/search/categories', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID
+            },
+            params: { query }
+        });
+
+        res.json(response.data.data.map(c => ({ id: c.id, name: c.name })));
     } catch (error) {
         handleApiError(res, error);
     }
 });
 
-app.patch('/api/:channel/stream-info', authenticate, checkChannelAccess, async (req, res) => {
+// Update the stream-info PATCH route
+app.patch('/api/:channel/stream-info', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
         const broadcasterId = await getUserId(req.params.channel, accessToken);
 
-        const response = await axios.patch('https://api.twitch.tv/helix/channels', {
-            title: req.body.title,
-            game_id: req.body.gameId
-        }, {
+        const updateData = {
+            title: req.body.title
+        };
+
+        // Only update game if game_name was provided and not empty
+        if (req.body.game_name && req.body.game_name.trim() !== '') {
+            const searchResponse = await axios.get('https://api.twitch.tv/helix/search/categories', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Client-Id': process.env.TWITCH_CLIENT_ID
+                },
+                params: {
+                    query: req.body.game_name,
+                    first: 1
+                }
+            });
+
+            if (searchResponse.data.data.length > 0) {
+                updateData.game_id = searchResponse.data.data[0].id;
+            } else {
+                return res.status(400).json({
+                    error: 'Category not found',
+                    details: `Could not find category "${req.body.game_name}"`
+                });
+            }
+        }
+
+        const response = await axios.patch('https://api.twitch.tv/helix/channels', updateData, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -461,14 +697,27 @@ app.patch('/api/:channel/stream-info', authenticate, checkChannelAccess, async (
             params: { broadcaster_id: broadcasterId }
         });
 
-        res.json({ success: true, data: response.data });
+        // Get the current channel info to return the actual category name
+        const channelResponse = await axios.get('https://api.twitch.tv/helix/channels', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': process.env.TWITCH_CLIENT_ID
+            },
+            params: { broadcaster_id: broadcasterId }
+        });
+
+        res.json({
+            success: true,
+            title: req.body.title,
+            category: channelResponse.data.data[0]?.game_name || ''
+        });
     } catch (error) {
         handleApiError(res, error);
     }
 });
 
 // Mod Stats
-app.get('/api/:channel/mod-stats', authenticate, checkChannelAccess, async (req, res) => {
+app.get('/api/:channel/mod-stats', async (req, res) => {
     try {
         const tokenManager = new TokenManager(req.params.channel);
         const accessToken = await tokenManager.getAccessToken();
@@ -513,70 +762,6 @@ app.get('/api/:channel/mod-stats', authenticate, checkChannelAccess, async (req,
         handleApiError(res, error);
     }
 });
-
-// User ID Lookup
-app.get('/api/:channel/user-id', authenticate, checkChannelAccess, async (req, res) => {
-    try {
-        const tokenManager = new TokenManager(req.params.channel);
-        const accessToken = await tokenManager.getAccessToken();
-
-        const response = await axios.get('https://api.twitch.tv/helix/users', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Client-Id': process.env.TWITCH_CLIENT_ID
-            },
-            params: { login: req.query.username }
-        });
-
-        if (response.data.data.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        res.json({ userId: response.data.data[0].id });
-    } catch (error) {
-        console.error('User ID lookup error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to lookup user ID' });
-    }
-});
-
-
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/login.html'));
-});
-
-
-
-app.get('/c/:channel', authenticate, (req, res) => {
-    if (req.user.role !== 'admin' && req.user.channel !== req.params.channel) {
-        return res.redirect('/login?error=access_denied');
-    }
-    res.sendFile(path.join(__dirname, 'public/channel.html'));
-});
-
-
-// Serve HTML files without .html extension
-app.get('/:page', (req, res) => {
-    const page = req.params.page;
-    const validPages = ['login', 'hub', 'c']; // Add any other page names here
-
-    if (validPages.includes(page.split('/')[0])) {
-        // Check if it's a channel page
-        if (page.startsWith('c/')) {
-            const channelName = page.split('/')[1];
-            return res.sendFile(path.join(__dirname, 'public/channel.html'));
-        }
-
-        // Check if file exists
-        const filePath = path.join(__dirname, 'public', `${page}.html`);
-        if (fs.existsSync(filePath)) {
-            return res.sendFile(filePath);
-        }
-    }
-
-    // Handle 404
-    res.status(404).sendFile(path.join(__dirname, 'public/404.html'));
-});
-
 
 // Helper Functions
 async function handleModAction(req, res, action, body = null, params = {}) {
@@ -674,14 +859,36 @@ function handleApiError(res, error) {
     });
 
     const statusCode = error.response?.status || 500;
+    const errorData = error.response?.data || {};
+
+    // Extract the most specific error message possible
+    let errorMessage = 'Request failed';
+
+    // Check for Twitch API error format
+    if (errorData.error && typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+        if (errorData.message && typeof errorData.message === 'string') {
+            errorMessage += `: ${errorData.message}`;
+        }
+    }
+    // Check for common error formats
+    else if (errorData.message) {
+        errorMessage = errorData.message;
+    } else if (error.message) {
+        errorMessage = error.message;
+    }
+
     res.status(statusCode).json({
-        error: 'API request failed',
-        details: error.response?.data || error.message
+        error: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? {
+            originalError: error.message,
+            fullResponse: error.response?.data
+        } : undefined
     });
 }
 
 // Start Server
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Twitch Client ID: ${process.env.TWITCH_CLIENT_ID}`);
+    console.log('Twitch Client ID:', process.env.TWITCH_CLIENT_ID);
 });

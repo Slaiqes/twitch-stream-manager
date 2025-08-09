@@ -4,61 +4,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Channel Manager - Stream Manager</title>
+    <title>Channel Manager</title>
     <link rel="icon" href="/images/pfp_logo.png" type="image/png">
     <link rel="stylesheet" href="/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 </head>
 
 <body class="channel-page">
     <div class="dashboard-container">
         <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="channel-profile">
-                <div class="avatar-container">
-                    <img id="channelAvatar" src="" alt="Channel Avatar" class="profile-avatar">
-                    <div class="avatar-status"></div>
+            <div class="sidebar-header">
+                <div class="theme-toggle">
+                    <button id="themeToggle" class="btn btn-icon">
+                        <i class="fas fa-moon"></i>
+                        <i class="fas fa-sun"></i>
+                    </button>
                 </div>
-                <h2 id="channelName">Channel Name</h2>
-                <div class="channel-meta">
-                    <span id="channelStatus" class="badge">
-                        <i class="fas fa-circle"></i> <span class="status-text">Connected</span>
-                    </span>
-                    <span id="tokenStatus" class="badge">
-                        <i class="fas fa-key"></i> <span class="status-text">Token valid</span>
-                    </span>
+                <div class="channel-profile-container">
+                    <div class="channel-avatar-wrapper">
+                        <img id="channelAvatar" src="" alt="Channel Avatar" class="channel-avatar">
+                        <div class="channel-status-indicator">
+                            <span class="status-dot"></span>
+                        </div>
+                    </div>
+                    <div class="channel-info-wrapper">
+
+
+                        <div class="channel-name-row">
+                            <h2 id="channelName">Channel Name</h2>
+                            <span id="broadcasterType" class="broadcaster-type">Streamer</span>
+                            <div class="channel-stats-row">
+                                <span class="follower-count">
+                                    <i class="fas fa-users"></i>
+                                    <span id="followerCount">0</span>
+                                </span>
+
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <h3 class="nav-title">Moderation</h3>
-                    <a href="#moderation" class="nav-item active" data-section="moderation">
+                <!-- Moderation Section -->
+                <div class="nav-section expanded">
+                    <div class="nav-section-header" data-section="moderation">
                         <i class="fas fa-gavel"></i>
-                        <span>Mod Tools</span>
-                    </a>
-                    <a href="#mod-stats" class="nav-item" data-section="mod-stats">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Mod Stats</span>
-                    </a>
+                        <span>Moderation</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="nav-section-content">
+                        <a href="#moderation" class="nav-item active" data-section="moderation">
+                            <i class="fas fa-tools"></i>
+                            <span>Mod Tools</span>
+                        </a>
+                        <a href="#mod-stats" class="nav-item" data-section="mod-stats">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>Mod Stats</span>
+                        </a>
+                    </div>
                 </div>
 
+                <!-- Stream Section -->
                 <div class="nav-section">
-                    <h3 class="nav-title">Stream</h3>
-                    <a href="#stream-info" class="nav-item" data-section="stream-info">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Stream Info</span>
-                    </a>
-                    <a href="#commercials" class="nav-item" data-section="commercials">
-                        <i class="fas fa-ad"></i>
-                        <span>Commercials</span>
-                    </a>
+                    <div class="nav-section-header" data-section="stream">
+                        <i class="fas fa-stream"></i>
+                        <span>Stream</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="nav-section-content">
+                        <a href="#stream-info" class="nav-item" data-section="stream-info">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Stream Info</span>
+                        </a>
+                        <a href="#commercials" class="nav-item" data-section="commercials">
+                            <i class="fas fa-ad"></i>
+                            <span>Commercials</span>
+                        </a>
+                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <h3 class="nav-title">Actions</h3>
+                <!-- Move Back to Hub here and remove Actions section -->
+                <div class="nav-section logout-section">
                     <a href="/hub.html" class="nav-item" id="backToHubBtn">
                         <i class="fas fa-arrow-left"></i>
                         <span>Back to Hub</span>
@@ -69,6 +100,7 @@
                     </a>
                 </div>
             </nav>
+
         </aside>
 
         <!-- Main Content -->
@@ -93,118 +125,289 @@
                 </div>
             </header>
 
-            <!-- Content sections remain the same as before -->
-            <!-- ... -->
+            <div class="content-section">
+                <!-- Moderation Tools Section -->
+                <div id="moderation" class="section-content active">
+                    <div class="card-grid">
+                        <!-- Ban User Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-ban"></i> Ban User</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <input type="text" id="banUsername" class="form-control" placeholder="Username">
+                                    <input type="text" id="banReason" class="form-control"
+                                        placeholder="Reason (optional)">
+                                    <button id="banUser" class="btn btn-danger btn-block">
+                                        <i class="fas fa-ban"></i> Ban User
+                                    </button>
+                                    <button id="unbanUser" class="btn btn-secondary btn-block">
+                                        <i class="fas fa-undo"></i> Unban User
+                                    </button>
+                                    <div id="banResult" class="result-message"></div>
+                                </div>
+                            </div>
+                        </div>
 
-        </main>
-    </div>
+                        <!-- Timeout User Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-clock"></i> Timeout User</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <input type="text" id="timeoutUsername" class="form-control" placeholder="Username">
+                                    <select id="timeoutDuration" class="form-control">
+                                        <option value="300">5 minutes</option>
+                                        <option value="600">10 minutes</option>
+                                        <option value="3600">1 hour</option>
+                                        <option value="86400">1 day</option>
+                                    </select>
+                                    <input type="text" id="timeoutReason" class="form-control"
+                                        placeholder="Reason (optional)">
+                                    <button id="timeoutUser" class="btn btn-warning btn-block">
+                                        <i class="fas fa-clock"></i> Timeout User
+                                    </button>
+                                    <button id="untimeoutUser" class="btn btn-secondary btn-block">
+                                        <i class="fas fa-undo"></i> Untimeout User
+                                    </button>
+                                    <div id="timeoutResult" class="result-message"></div>
+                                </div>
+                            </div>
+                        </div>
 
-    <script src="/js/channel.js"></script>
-</body>
+                        <!-- Moderator Management Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-user-shield"></i> Moderator Management</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <input type="text" id="modUsername" class="form-control" placeholder="Username">
+                                    <button id="modUser" class="btn btn-primary btn-block">
+                                        <i class="fas fa-plus"></i> Add Moderator
+                                    </button>
+                                    <button id="unmodUser" class="btn btn-secondary btn-block">
+                                        <i class="fas fa-minus"></i> Remove Moderator
+                                    </button>
+                                    <div id="modResult" class="result-message"></div>
+                                </div>
+                            </div>
+                        </div>
 
-</html>
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Channel Manager - Stream Manager</title>
-    <link rel="icon" href="/images/pfp_logo.png" type="image/png">
-    <link rel="stylesheet" href="/css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-
-<body class="channel-page">
-    <div class="dashboard-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="channel-profile">
-                <div class="avatar-container">
-                    <img id="channelAvatar" src="" alt="Channel Avatar" class="profile-avatar">
-                    <div class="avatar-status"></div>
-                </div>
-                <h2 id="channelName">Channel Name</h2>
-                <div class="channel-meta">
-                    <span id="channelStatus" class="badge">
-                        <i class="fas fa-circle"></i> <span class="status-text">Connected</span>
-                    </span>
-                    <span id="tokenStatus" class="badge">
-                        <i class="fas fa-key"></i> <span class="status-text">Token valid</span>
-                    </span>
-                </div>
-            </div>
-
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <h3 class="nav-title">Moderation</h3>
-                    <a href="#moderation" class="nav-item active" data-section="moderation">
-                        <i class="fas fa-gavel"></i>
-                        <span>Mod Tools</span>
-                    </a>
-                    <a href="#mod-stats" class="nav-item" data-section="mod-stats">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Mod Stats</span>
-                    </a>
-                </div>
-
-                <div class="nav-section">
-                    <h3 class="nav-title">Stream</h3>
-                    <a href="#stream-info" class="nav-item" data-section="stream-info">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Stream Info</span>
-                    </a>
-                    <a href="#commercials" class="nav-item" data-section="commercials">
-                        <i class="fas fa-ad"></i>
-                        <span>Commercials</span>
-                    </a>
-                </div>
-
-                <div class="nav-section">
-                    <h3 class="nav-title">Actions</h3>
-                    <a href="/hub.html" class="nav-item" id="backToHubBtn">
-                        <i class="fas fa-arrow-left"></i>
-                        <span>Back to Hub</span>
-                    </a>
-                    <a href="#" class="nav-item" id="channelLogout">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Logout</span>
-                    </a>
-                </div>
-            </nav>
-        </aside>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <header class="main-header">
-                <div class="header-left">
-                    <h1 id="pageTitle">Moderation Tools</h1>
-                    <nav class="breadcrumb">
-                        <a href="/hub.html">Dashboard</a>
-                        <span>/</span>
-                        <span id="breadcrumbChannel">Channel</span>
-                        <span>/</span>
-                        <span>Moderation</span>
-                    </nav>
-                </div>
-
-                <div class="header-right">
-                    <div class="stream-status-indicator">
-                        <span class="status-dot"></span>
-                        <span class="status-text">Offline</span>
+                        <!-- VIP Management Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-crown"></i> VIP Management</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <input type="text" id="vipUsername" class="form-control" placeholder="Username">
+                                    <button id="addVip" class="btn btn-primary btn-block">
+                                        <i class="fas fa-plus"></i> Add VIP
+                                    </button>
+                                    <button id="removeVip" class="btn btn-secondary btn-block">
+                                        <i class="fas fa-minus"></i> Remove VIP
+                                    </button>
+                                    <div id="vipResult" class="result-message"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </header>
 
-            <!-- Content sections remain the same as before -->
-            <!-- ... -->
+                <!-- Mod Stats Section -->
+                <div id="mod-stats" class="section-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-bar"></i> Moderation Statistics</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="statsTimeframe">Timeframe:</label>
+                                <select id="statsTimeframe" class="form-control">
+                                    <option value="1">Last 24 hours</option>
+                                    <option value="7">Last 7 days</option>
+                                    <option value="30" selected>Last 30 days</option>
+                                    <option value="90">Last 90 days</option>
+                                </select>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="modStatsChart"></canvas>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="mod-stats-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Moderator</th>
+                                            <th>Total Actions</th>
+                                            <th>Timeouts</th>
+                                            <th>Bans</th>
+                                            <th>Actions/Day</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="modStatsBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
+                <!-- Stream Info Section -->
+                <div id="stream-info" class="section-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-info-circle"></i> Stream Information</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="info-label">Status:</span>
+                                    <span id="streamStatus" class="info-value status-offline">
+                                        <i class="fas fa-circle status-icon"></i> Offline
+                                    </span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Title:</span>
+                                    <span id="streamTitle">No title set</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Category:</span>
+                                    <span id="streamCategory">No category set</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Started:</span>
+                                    <span id="streamStarted">-</span>
+                                </div>
+                            </div>
+
+                            <div class="section-divider">
+                                <span>Update Stream Info</span>
+                            </div>
+
+                            <div class="form-group">
+                                <input type="text" id="streamTitleInput" class="form-control"
+                                    placeholder="Stream title">
+                            </div>
+                            <div class="form-group">
+                                <input type="text" id="streamCategoryInput" class="form-control"
+                                    placeholder="Game/Category">
+                            </div>
+                            <button id="updateStreamInfo" class="btn btn-primary btn-block">
+                                <i class="fas fa-save"></i> Update Info
+                            </button>
+                            <div id="streamUpdateResult" class="result-message"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Commercials Section -->
+                <div id="commercials" class="section-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-ad"></i> Run Commercial</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="commercialLength">Duration:</label>
+                                <select id="commercialLength" class="form-control">
+                                    <option value="30">30 seconds</option>
+                                    <option value="60">60 seconds</option>
+                                    <option value="90">90 seconds</option>
+                                    <option value="120">120 seconds</option>
+                                    <option value="150">150 seconds</option>
+                                    <option value="180">180 seconds</option>
+                                </select>
+                                <button id="runCommercial" class="btn btn-primary btn-block">
+                                    <i class="fas fa-play"></i> Run Commercial
+                                </button>
+                                <div id="commercialResult" class="result-message"></div>
+                            </div>
+
+                            <div class="section-divider">
+                                <span>Commercial History</span>
+                            </div>
+
+                            <div class="commercial-history">
+                                <!-- History items will be added here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
     <script src="/js/channel.js"></script>
+    <script>
+        // Theme toggle functionality
+        document.getElementById('themeToggle').addEventListener('click', function () {
+            const html = document.documentElement;
+            const newTheme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+
+            // Update Chart.js theme if needed
+            if (window.updateChartTheme) {
+                updateChartTheme(newTheme);
+            }
+        });
+
+        // Collapsible sidebar sections
+        document.querySelectorAll('.nav-section-header').forEach(header => {
+            header.addEventListener('click', function () {
+                const section = this.parentElement;
+                section.classList.toggle('expanded');
+
+                // Save state to localStorage
+                const sectionId = this.getAttribute('data-section');
+                const isExpanded = section.classList.contains('expanded');
+                localStorage.setItem(`section-${sectionId}`, isExpanded);
+            });
+        });
+
+        // Navigation between sections
+        document.querySelectorAll('.nav-item[data-section]').forEach(item => {
+            item.addEventListener('click', function (e) {
+                e.preventDefault();
+                const sectionId = this.getAttribute('data-section');
+
+                // Hide all sections
+                document.querySelectorAll('.section-content').forEach(section => {
+                    section.classList.remove('active');
+                });
+
+                // Show selected section
+                document.getElementById(sectionId).classList.add('active');
+
+                // Update active nav item
+                document.querySelectorAll('.nav-item').forEach(navItem => {
+                    navItem.classList.remove('active');
+                });
+                this.classList.add('active');
+
+                // Update page title
+                const pageTitle = this.querySelector('span').textContent;
+                document.getElementById('pageTitle').textContent = pageTitle;
+            });
+        });
+
+        // Restore section states from localStorage
+        document.querySelectorAll('.nav-section').forEach(section => {
+            const header = section.querySelector('.nav-section-header');
+            const sectionId = header.getAttribute('data-section');
+            const wasExpanded = localStorage.getItem(`section-${sectionId}`) === 'true';
+
+            if (wasExpanded) {
+                section.classList.add('expanded');
+            }
+        });
+
+        // Set initial theme
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
 </body>
 
 </html>
